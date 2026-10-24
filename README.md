@@ -4,6 +4,8 @@ A Windows desktop application for preparing offline Windows installation images,
 
 ## Run on Windows
 
+[Download the first Windows x64 preview](https://github.com/sethcroft/ImageForge/raw/refs/tags/v0.1.0-preview.1/downloads/v0.1.0-preview.1/ImageForge-win-x64.zip) · [Release notes](https://github.com/sethcroft/ImageForge/releases/tag/v0.1.0-preview.1)
+
 Extract the Windows x64 package and open `ImageForge.exe`. Accept the Windows administrator prompt. The self-contained package includes the .NET runtime; keep all packaged files together. It uses the DISM version included with your Windows installation. Use a Windows host that supports servicing the target image version. The preview executable is unsigned.
 
 1. Work on a copy of `install.wim` on a local writable drive. If you have an ISO, extract its contents first and locate `sources/install.wim`. ESD files can be inspected but must be exported to WIM before mounting.
