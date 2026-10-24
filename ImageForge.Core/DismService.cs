@@ -1,6 +1,3 @@
-using System.Diagnostics;
-using System.Security.Principal;
-using System.Text;
 using System.Text.Json;
 
 namespace ImageForge.Core;
@@ -13,6 +10,33 @@ public sealed class DismService
     private readonly Dictionary<string, OwnedMount> known = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> verified = new(StringComparer.OrdinalIgnoreCase);
     private sealed record OwnedMount(string MountPath, string ImagePath, int Index, bool Complete);
+    public string? ExecutableOverride { get; set; }
+
+    public Task<bool> HasMountedSourceUnderAsync(string directory) => Exclusive(async () =>
+    {
+        directory = DismCommands.SafePath(directory) + Path.DirectorySeparatorChar;
+        return (await Mounted()).Any(m => DismCommands.SafePath(m.ImagePath).StartsWith(directory, StringComparison.OrdinalIgnoreCase));
+    });
+
+    public Task ExportEditionAsync(string image, int index, string destination) => Exclusive(async () =>
+    {
+        var args = ImageTools.ExportArguments(image, index, destination);
+        await RequireSourceUnmounted(image);
+        await Run(args);
+    });
+
+    public Task SplitImageAsync(string image, string destination, int sizeMb) => Exclusive(async () =>
+    {
+        var args = ImageTools.SplitArguments(image, destination, sizeMb);
+        await RequireSourceUnmounted(image);
+        await Run(args);
+    });
+
+    private async Task RequireSourceUnmounted(string image)
+    {
+        if ((await Mounted()).Any(m => SamePath(m.ImagePath, image)))
+            throw new InvalidOperationException("Save or discard every mount of this source image before exporting or splitting it.");
+    }
 
     public DismService(Action<string> log)
     {
@@ -149,32 +173,14 @@ public sealed class DismService
         try { await task(); } finally { operation.Release(); }
     }
 
-    private async Task<string> Run(IReadOnlyList<string> args)
+    private Task<string> Run(IReadOnlyList<string> args)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Windows image servicing requires Windows 10 or 11, running as administrator.");
-        using var identity = WindowsIdentity.GetCurrent();
-        if (!new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator)) throw new InvalidOperationException("Restart ImageForge as administrator to use DISM.");
-        var executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), Environment.Is64BitOperatingSystem && !Environment.Is64BitProcess ? "Sysnative" : "System32", "dism.exe");
-        var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var arg in args) start.ArgumentList.Add(arg);
-        log("DISM " + string.Join(" ", args.Select(a => a.Contains(' ') ? $"\"{a}\"" : a)));
-        using var process = new Process { StartInfo = start };
-        process.Start();
-        var stdout = new StringBuilder(); var stderr = new StringBuilder();
-        var truncated = false;
-        async Task Drain(StreamReader reader, StringBuilder capture)
-        {
-            while (await reader.ReadLineAsync() is { } line)
-            {
-                log(line);
-                if (capture.Length + line.Length > 16 * 1024 * 1024) { truncated = true; continue; }
-                capture.AppendLine(line);
-            }
-        }
-        await Task.WhenAll(Drain(process.StandardOutput, stdout), Drain(process.StandardError, stderr), process.WaitForExitAsync());
-        if (process.ExitCode is not 0 and not 3010) throw new InvalidOperationException($"DISM failed with exit code {process.ExitCode}.\n{stderr}\n{stdout.ToString()[Math.Max(0, stdout.Length - 2500)..]}");
-        if (truncated) throw new InvalidOperationException("DISM output exceeded the capture limit. The command may have completed; inspect DISM's log and mount state before retrying.");
-        if (process.ExitCode == 3010) log("DISM reports a reboot is required. ImageForge will not restart this computer.");
-        return stdout.ToString();
+        ExternalProcess.RequireWindowsAdministrator();
+        var executable = string.IsNullOrWhiteSpace(ExecutableOverride)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), Environment.Is64BitOperatingSystem && !Environment.Is64BitProcess ? "Sysnative" : "System32", "dism.exe")
+            : DismCommands.ExistingFile(ExecutableOverride, ".exe");
+        if (!Path.GetFileName(executable).Equals("dism.exe", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Select dism.exe from Windows or the Microsoft Windows ADK.");
+        return ExternalProcess.RunAsync(executable, args, log, allowRestartCode: true);
     }
 }

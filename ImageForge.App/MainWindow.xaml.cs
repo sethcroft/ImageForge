@@ -24,10 +24,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _dism = new DismService(Log);
+        InitializeWorkspace();
         PlanList.ItemsSource = _steps;
         _steps.CollectionChanged += (_, _) => QueueBadge.Text = $"{_steps.Count} change{(_steps.Count == 1 ? "" : "s")} queued";
         MountPathBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ImageForge", "Mount");
-        Log("ImageForge 0.1 — offline Windows image servicing. No servicing command runs until requested.");
+        Log("ImageForge 0.2 — offline image and ISO workspace. No image operation runs until requested.");
     }
 
     private void Log(string text)
@@ -45,30 +46,44 @@ public partial class MainWindow : Window
     {
         if (_busy) return;
         _busy = true;
-        WorkspaceTabs.IsEnabled = false;
+        WorkspaceBody.IsEnabled = false;
+        CommandRibbon.IsEnabled = false;
+        TopMenu.IsEnabled = false;
         BusyProgress.Visibility = Visibility.Visible;
         StatusText.Text = title;
         try
         {
+            _dism.ExecutableOverride = string.IsNullOrWhiteSpace(DismPathBox.Text) ? null : DismPathBox.Text.Trim();
             await action();
             StatusText.Text = "Ready · " + title + " completed";
         }
         catch (Exception ex)
         {
             Log("ERROR: " + ex.Message);
+            ActivityExpander.IsExpanded = true;
             StatusText.Text = "Stopped · " + ex.Message;
-            MessageBox.Show(this, ex.Message + "\n\nSee the activity log for details. A failed servicing operation may have changed the mounted image; inspect it before retrying or discard it.", "Operation stopped", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, ex.Message + "\n\nSee the activity log. A failed operation may have produced partial output or changed the mounted image. Inspect it before retrying.", "Operation stopped", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
             _busy = false;
-            WorkspaceTabs.IsEnabled = true;
+            WorkspaceBody.IsEnabled = true;
+            CommandRibbon.IsEnabled = true;
+            TopMenu.IsEnabled = true;
             BusyProgress.Visibility = Visibility.Collapsed;
             UpdateMountBadge();
         }
     }
 
-    private void UpdateMountBadge() => MountBadge.Text = _activeMount is null ? "NO IMAGE MOUNTED" : "IMAGE MOUNTED · OFFLINE";
+    private void UpdateMountBadge()
+    {
+        MountBadge.Text = _activeMount is null ? "No image mounted" : "Image mounted · Offline";
+        DismPathBox.IsReadOnly = _activeMount is not null;
+        ImagePathBox.IsReadOnly = _activeMount is not null;
+        EditionBox.IsEnabled = _activeMount is null;
+        foreach (var row in _images) row.Mounted = _activeMount is not null && row.Path.Equals(_activeImage, StringComparison.OrdinalIgnoreCase);
+        ImageList.Items.Refresh();
+    }
     private string RequireMount() => _activeMount ?? throw new InvalidOperationException("Mount an image or reconnect an ImageForge-owned mount first.");
     private void RequireUnmounted()
     {
@@ -76,13 +91,6 @@ public partial class MainWindow : Window
     }
 
     private static OpenFileDialog FilePicker(string filter, bool multi = false) => new() { Filter = filter, Multiselect = multi, CheckFileExists = true };
-
-    private void BrowseImage_Click(object sender, RoutedEventArgs e)
-    {
-        if (_activeMount is not null) { MessageBox.Show(this, "Unmount the current image before choosing another source."); return; }
-        var picker = FilePicker("Windows images|*.wim;*.esd");
-        if (picker.ShowDialog(this) == true) { ImagePathBox.Text = picker.FileName; EditionBox.ItemsSource = null; _editionsSource = null; }
-    }
 
     private void BrowseMount_Click(object sender, RoutedEventArgs e)
     {
@@ -95,11 +103,7 @@ public partial class MainWindow : Window
     {
         RequireUnmounted();
         var path = Path.GetFullPath(ImagePathBox.Text.Trim());
-        var editions = await _dism.GetEditionsAsync(path);
-        EditionBox.ItemsSource = editions;
-        EditionBox.SelectedIndex = editions.Count > 0 ? 0 : -1;
-        _editionsSource = path;
-        Log($"Read {editions.Count} edition(s) from {path}.");
+        await AddSourceAsync(path);
     });
 
     private async void Mount_Click(object sender, RoutedEventArgs e) => await Run("Mount image", async () =>
@@ -224,6 +228,7 @@ public partial class MainWindow : Window
         var index = _activeIndex > 0 ? _activeIndex : (EditionBox.SelectedItem as ImageEdition)?.Index ?? 1;
         var preset = new ProjectPreset(_activeImage ?? ImagePathBox.Text.Trim(), index, _activeMount ?? MountPathBox.Text.Trim(), _steps.ToList());
         await File.WriteAllTextAsync(picker.FileName, JsonSerializer.Serialize(preset, JsonOptions));
+        RememberPreset(picker.FileName);
         Log("Saved preset: " + picker.FileName);
     });
 
@@ -232,8 +237,14 @@ public partial class MainWindow : Window
         RequireUnmounted();
         var picker = FilePicker("ImageForge preset|*.json");
         if (picker.ShowDialog(this) != true) return;
-        if (new FileInfo(picker.FileName).Length > 1024 * 1024) throw new InvalidDataException("Preset exceeds the 1 MiB limit.");
-        var preset = JsonSerializer.Deserialize<ProjectPreset>(await File.ReadAllTextAsync(picker.FileName)) ?? throw new InvalidDataException("Invalid preset.");
+        await LoadPresetPathAsync(picker.FileName);
+    });
+
+    private async Task LoadPresetPathAsync(string path)
+    {
+        RequireUnmounted();
+        if (new FileInfo(path).Length > 1024 * 1024) throw new InvalidDataException("Preset exceeds the 1 MiB limit.");
+        var preset = JsonSerializer.Deserialize<ProjectPreset>(await File.ReadAllTextAsync(path)) ?? throw new InvalidDataException("Invalid preset.");
         if (preset.Steps is null || preset.Steps.Count > 1000 || preset.ImageIndex < 1 || string.IsNullOrWhiteSpace(preset.ImagePath) || string.IsNullOrWhiteSpace(preset.MountPath))
             throw new InvalidDataException("Preset must have image and mount paths, a positive image index, and at most 1,000 operations.");
         if (preset.Steps.Any(s => s is null || s.Kind is not ("add-driver" or "add-package" or "enable-feature" or "disable-feature") || string.IsNullOrWhiteSpace(s.Value)))
@@ -249,8 +260,11 @@ public partial class MainWindow : Window
         EditionBox.SelectedItem = edition;
         _steps.Clear();
         foreach (var step in preset.Steps) _steps.Add(step);
+        RememberPreset(path);
+        AddSourceRows(preset.ImagePath, editions);
+        Navigate(6);
         Log("Loaded preset. Review the queue before mounting and applying.");
-    });
+    }
 
     private async void ExportUnattend_Click(object sender, RoutedEventArgs e) => await Run("Export answer file", async () =>
     {
@@ -276,5 +290,6 @@ public partial class MainWindow : Window
             var detail = _activeMount is not null ? $"The image will remain mounted at:\n{_activeMount}\n\nUse Reconnect owned mount next time, or cancel to save/discard it now." : "Your pending queue is not automatically saved. Cancel and save a preset to keep it.";
             if (MessageBox.Show(this, detail + "\n\nClose ImageForge?", "Leave workspace", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) e.Cancel = true;
         }
+        if (!e.Cancel) SavePreferences();
     }
 }
