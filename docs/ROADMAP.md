@@ -28,3 +28,9 @@ Dependency-aware component/AppX removal, tracking components restored by updates
 Full unattended setup, account and disk-layout configuration, post-setup execution, multi-edition batch tasks, a documented CLI, deployed/live Windows editing, VHD/VHDX routes, SWM joining and a host-refresh wizard.
 
 The public feature catalog labels these entries **Planned** or **Partial**, rather than adding inactive controls to the desktop app.
+
+## Preview 0.3: expanded image and installed-Windows routes
+
+Implemented: compact status/progress UI with file-only diagnostics, SHA-256 verified Microsoft direct-link downloads, automatic ESD/SWM cache preparation, selected/all-edition export, complete SWM-set rejoining, WIM edition deletion, eligible offline edition upgrades, setup-template-based ISO conversion, VHD/VHDX DISM mounts, and explicit deployed/live targets. Host refresh now has compatibility scanning and an interactive Windows Setup hand-off. These new Windows routes are unverified at runtime; see PREVIEW-0.3.md.
+
+Still not included: an automatic Microsoft version catalogue, registry/policy tweaking, proprietary component removal, full unattended host refresh, disk partitioning, or a guarantee that applications/data can be preserved on every upgrade path. Earlier roadmap entries describe the state before preview 0.3.

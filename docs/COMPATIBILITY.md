@@ -1,6 +1,6 @@
 # Windows compatibility
 
-Last reviewed: 24 October 2026.
+Last reviewed: 25 October 2026.
 
 ImageForge is a Windows desktop application. The **host** is the PC running ImageForge; the **target** is the offline Windows image being edited. Their compatibility requirements are different. A Windows release appearing in this document does not mean every servicing operation has been verified on it.
 
@@ -66,23 +66,34 @@ Microsoft requires a compatible DISM/host/target combination. A newer target can
 
 ## Image formats and operation limits
 
-Preview 0.2 implements:
+Preview 0.3 implements:
 
 | Format | Implemented operations | Limits |
 | --- | --- | --- |
-| WIM | Edition inspection, mounting, offline servicing, save/discard, single-edition export and splitting | Sources must be unmounted before export, splitting or ISO creation. |
-| ESD | Edition inspection and export to WIM/ESD | Export to WIM before mounting/editing. Export retains the selected edition, not every edition. |
+| WIM | Edition inspection, mounting, offline servicing, save/discard, single/all-edition export, deletion and splitting | Sources must be unmounted before export, splitting or ISO creation. |
+| ESD | Edition inspection and selected/all-edition export to WIM/ESD | Load prepares a writable WIM cache automatically. |
 | ISO import | Read-only ISO mount, copy into a new editable media folder, owned ISO dismount | Windows Storage cmdlets are required. Existing destination folders and already-mounted ISOs are refused. Partial outputs are preserved on error. |
 | ISO creation | BIOS + UEFI ISO from complete Windows setup media | Requires a separately installed ADK `oscdimg.exe`, boot files and setup payloads; boot/install results are unverified. |
-| SWM | Create a split set from a WIM | Direct SWM editing/joining is not implemented. Individual resources can exceed the requested split size; verify actual sizes for FAT32. |
-| VHD/VHDX / deployed Windows | Not implemented | No direct route in the preview. |
+| SWM | Create a split set from WIM; export/join a complete matching set | Direct editing uses a prepared WIM cache, not in-place SWM mutation. Individual resources can exceed the requested split size; verify actual sizes for FAT32. |
+| VHD/VHDX | Inspect/mount with DISM at index 1 | New route is unverified on Windows; WIM-only integrity flags are omitted. |
+| Deployed Windows | Applicable packages/features; offline drivers and eligible offline edition upgrades | Select another Windows drive root, or choose running Windows explicitly. Direct changes are immediate. |
 
 These operations are implemented and cross-built, but their new Windows runtime behavior remains unverified. They are not a certification of every supported Microsoft format combination.
 
 Drivers must be INF packages; updates must be CAB/MSU packages applicable to the target. The user controls package order. Enabling an optional feature may fail when its payload or prerequisites are unavailable. The first preview exports answer files for `amd64` only; this does not certify x86 or Arm64 unattended deployment.
 
-Live Windows editing is not part of the current servicing workflow. An offline Windows image can still be incompatible with a particular operation even when the file format is accepted.
+Preview 0.3 adds an explicit running-Windows target for applicable package/feature operations. INF integration and client edition conversion remain offline-only. Online MSU servicing requires Windows 11 or newer. Direct Windows-volume targets must expose a stable local volume identity and cannot alias the running Windows volume. Changes are immediate and may require a restart; image-file commit/discard does not apply to them. An offline Windows image can still be incompatible with a particular operation even when the file format is accepted.
 
 ## Recording a verified configuration
 
 For each future compatibility claim, record the ImageForge release, host edition/version/build and architecture, DISM version, target edition/version/build and architecture, input format, operations exercised, commit/discard result, and deployment/boot result when tested. Use the [Windows validation checklist](WINDOWS-VALIDATION.md). Mark untested operations explicitly instead of promoting an entire Windows family from one successful launch.
+
+## Host refresh and downloads (preview 0.3)
+
+The Microsoft-media downloader requires a user-generated direct Microsoft URL and the exact SHA-256 value from the official release/language/architecture page. It validates allowed HTTPS hosts across redirects, verifies the supplied hash and basic ISO/ESD container format, and removes failed/cancelled download partials. It is not an automatic version catalogue or an independent Microsoft hash database.
+
+Host refresh uses original, unmodified matching Microsoft media, verified setup signatures, an explicit compatibility scan and then interactive Windows Setup. A completed `0xC1900210` scan is required for the next wizard step. Generic exit 0 and known migration/application/hardware/disk-space blocks do not count as passed scans. The setup-file hash and install-image size/timestamp are rechecked before launch to detect changes after the scan; this is not a cryptographic validation of every media file. Windows Setup owns preservation choices, licensing, supported upgrade paths and restarts. The app does not certify zero-loss upgrades or use customized media for this route.
+
+Sources: [Microsoft ISO and SHA-256 workflow](https://www.microsoft.com/software-download/windows11), [Windows Setup command-line options](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-setup-command-line-options?view=windows-11), [Windows upgrade paths](https://learn.microsoft.com/en-us/windows/deployment/upgrade/windows-upgrade-paths), [edition servicing](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/dism-windows-edition-servicing-command-line-options?view=windows-11).
+
+The new preview 0.3 routes are implemented and cross-built, but their Windows runtime behavior still requires the checks in [PREVIEW-0.3.md](PREVIEW-0.3.md).

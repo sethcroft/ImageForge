@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace ImageForge.Core;
 
-public sealed class DismService
+public sealed partial class DismService
 {
     private readonly Action<string> log;
     private readonly SemaphoreSlim operation = new(1, 1);
@@ -11,6 +11,7 @@ public sealed class DismService
     private readonly HashSet<string> verified = new(StringComparer.OrdinalIgnoreCase);
     private sealed record OwnedMount(string MountPath, string ImagePath, int Index, bool Complete);
     public string? ExecutableOverride { get; set; }
+    public event Action<string, int>? PhaseChanged;
 
     public Task<bool> HasMountedSourceUnderAsync(string directory) => Exclusive(async () =>
     {
@@ -18,11 +19,41 @@ public sealed class DismService
         return (await Mounted()).Any(m => DismCommands.SafePath(m.ImagePath).StartsWith(directory, StringComparison.OrdinalIgnoreCase));
     });
 
-    public Task ExportEditionAsync(string image, int index, string destination) => Exclusive(async () =>
+    public Task ExportEditionAsync(string image, int index, string destination) => ExportImageAsync(image, [index], destination);
+
+    public async Task ExportAllEditionsAsync(string image, string destination)
     {
-        var args = ImageTools.ExportArguments(image, index, destination);
+        var editions = await GetEditionsAsync(image);
+        await ExportImageAsync(image, editions.Select(e => e.Index).ToArray(), destination);
+    }
+
+    private Task ExportImageAsync(string image, int[] indices, string destination) => Exclusive(async () =>
+    {
+        if (indices.Length == 0) throw new ArgumentException("No image editions were found to export.");
+        var extension = Path.GetExtension(destination).ToLowerInvariant();
+        if (extension is not (".wim" or ".esd")) throw new ArgumentException("Export to a new WIM or ESD file.");
+        destination = ImageTools.NewOutputFile(destination, extension);
         await RequireSourceUnmounted(image);
-        await Run(args);
+        var temporary = Path.Combine(Path.GetDirectoryName(destination)!, ".imageforge-" + Guid.NewGuid().ToString("N") + ".partial" + extension);
+        var arguments = ImageTools.ExportArguments(image, indices[0], temporary).ToList();
+        foreach (var (index, position) in indices.Select((index, position) => (index, position)))
+        {
+            if (index < 1) throw new ArgumentException("Select a positive edition index.");
+            PhaseChanged?.Invoke($"Exporting edition {position + 1} of {indices.Length}", index);
+            var current = arguments.Select(arg => arg.StartsWith("/SourceIndex:", StringComparison.Ordinal) ? $"/SourceIndex:{index}" : arg).ToArray();
+            await Run(current);
+        }
+        File.Move(temporary, destination, false);
+    });
+
+    public Task DeleteEditionAsync(string image, int index) => Exclusive(async () =>
+    {
+        image = DismCommands.ExistingFile(image, ".wim");
+        await RequireSourceUnmounted(image);
+        var editions = DismParser.ParseEditions(await Run(["/English", "/Get-WimInfo", $"/WimFile:{image}"]));
+        if (editions.Count < 2) throw new InvalidOperationException("Keep at least one edition in the image. Export a new file instead.");
+        if (!editions.Any(e => e.Index == index)) throw new ArgumentException("That edition no longer exists in this image.");
+        await Run(["/English", "/Delete-Image", $"/ImageFile:{image}", $"/Index:{index}", "/CheckIntegrity"]);
     });
 
     public Task SplitImageAsync(string image, string destination, int sizeMb) => Exclusive(async () =>
@@ -58,14 +89,18 @@ public sealed class DismService
 
     public async Task<IReadOnlyList<ImageEdition>> GetEditionsAsync(string imagePath)
     {
-        var image = DismCommands.ExistingFile(imagePath, ".wim", ".esd");
-        return DismParser.ParseEditions(await Exclusive(() => Run(["/English", "/Get-WimInfo", $"/WimFile:{image}"])));
+        var image = DismCommands.ExistingFile(imagePath, ".wim", ".esd", ".swm", ".vhd", ".vhdx");
+        var isVirtualDisk = Path.GetExtension(image).ToLowerInvariant() is ".vhd" or ".vhdx";
+        return DismParser.ParseEditions(await Exclusive(() => Run(isVirtualDisk
+            ? ["/English", "/Get-ImageInfo", $"/ImageFile:{image}", "/Index:1"]
+            : ["/English", "/Get-WimInfo", $"/WimFile:{image}"])));
     }
 
     public async Task MountAsync(string imagePath, int index, string mountPath)
     {
-        var image = DismCommands.ExistingFile(imagePath, ".wim");
+        var image = DismCommands.ExistingFile(imagePath, ".wim", ".vhd", ".vhdx");
         var mount = DismCommands.SafePath(mountPath);
+        var mountArguments = ImageTools.MountArguments(image, index, mount);
         if (index < 1) throw new ArgumentException("Select a positive image index.");
         if (Path.GetPathRoot(mount) == mount) throw new ArgumentException("Choose an empty mount folder, not a drive root.");
         if (mount.StartsWith(image + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || string.Equals(mount, image, StringComparison.OrdinalIgnoreCase))
@@ -81,7 +116,7 @@ public sealed class DismService
             known[mount] = new(mount, image, index, false); Save();
             try
             {
-                await Run(["/English", "/Mount-Image", $"/ImageFile:{image}", $"/Index:{index}", $"/MountDir:{mount}", "/CheckIntegrity"]);
+                await Run(mountArguments);
                 var actual = (await Mounted()).SingleOrDefault(m => SamePath(m.MountPath, mount));
                 if (actual is null || !SamePath(actual.ImagePath, image) || actual.ImageIndex != index || actual.Status != "Ok")
                     throw new InvalidOperationException("DISM mount identity could not be verified. Mount reservation retained for manual recovery.");
@@ -109,22 +144,9 @@ public sealed class DismService
         verified.Add(mount);
     }
 
-    public async Task<IReadOnlyList<FeatureInfo>> GetFeaturesAsync(string mountPath)
-    {
-        var mount = DismCommands.SafePath(mountPath);
-        return await Exclusive(async () =>
-        {
-            await Reconcile(mount);
-            return DismParser.ParseFeatures(await Run(["/English", $"/Image:{mount}", "/Get-Features", "/Format:List"]));
-        });
-    }
+    public Task<IReadOnlyList<FeatureInfo>> GetFeaturesAsync(string mountPath) => GetFeaturesAsync(ServicingTarget.Mounted(mountPath));
 
-    public async Task ApplyStepAsync(string mountPath, PlanStep step)
-    {
-        var mount = DismCommands.SafePath(mountPath);
-        var args = DismCommands.ForStep(mount, step);
-        await Exclusive(async () => { await Reconcile(mount); await Run(args); });
-    }
+    public Task ApplyStepAsync(string mountPath, PlanStep step) => ApplyStepAsync(ServicingTarget.Mounted(mountPath), step);
 
     public async Task ApplyAsync(string mountPath, IEnumerable<PlanStep> steps)
     {
@@ -141,7 +163,7 @@ public sealed class DismService
         {
             await Reconcile(mount);
             var args = new List<string> { "/English", "/Unmount-Image", $"/MountDir:{mount}", commit ? "/Commit" : "/Discard" };
-            if (commit) args.Add("/CheckIntegrity");
+            if (commit && Path.GetExtension(known[mount].ImagePath).Equals(".wim", StringComparison.OrdinalIgnoreCase)) args.Add("/CheckIntegrity");
             await Run(args);
             verified.Remove(mount);
             if ((await Mounted()).Any(m => SamePath(m.MountPath, mount)))

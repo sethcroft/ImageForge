@@ -1,35 +1,37 @@
 # ImageForge
 
-A Windows desktop application for preparing offline Windows installation images, inspired by NTLite's image-servicing workflows. Built with C#/.NET 8 and WPF, using Microsoft's DISM executable. Preview version 0.2; this is an independent implementation with a smaller feature set.
+A Windows desktop application for preparing offline Windows installation images, inspired by NTLite's image-servicing workflows. Built with C#/.NET 8 and WPF, using Microsoft's DISM executable. Preview version 0.3; this is an independent implementation with a smaller feature set.
 
-## Preview 0.2: image and ISO workspace
+## Preview 0.3: progress, media and installed Windows
 
-The interface now uses a light toolbar, grouped image library, left navigation and a persistent presets panel. Presets remember their file locations between sessions; operations still run only when requested.
+The desktop has **no code/command output or log panel**. The bottom bar shows short loading/saving/downloading stages and genuine progress when the underlying operation provides it; otherwise it uses an indeterminate indicator. Active image rows show the current edition's progress. Diagnostics go to a per-session file in `%LOCALAPPDATA%\ImageForge\Diagnostics`, accessible from Help.
 
-New tools in **Image tools**:
+New workflows:
 
-- **Add folder:** discover WIM/ESD sources up to four nested directory levels, with bounded traversal and explicit reporting of skipped paths or scan limits.
-- **Import ISO:** select a local ISO and type a new output-folder name. The app mounts the ISO read-only, copies media into the new editable folder, then dismounts only its own ISO mount. Already mounted ISOs and existing output folders are refused. Inspect partial output after an error.
-- **Export edition / convert:** export one selected edition to a new WIM (maximum compression) or ESD (recovery compression). The exported file contains that edition only, typically at index 1. Existing output files are never appended to or overwritten.
-- **Split WIM:** write a new SWM set with a requested part size (default 3800 MB). Keep all parts together; a large indivisible resource can exceed the requested size, so verify actual sizes before copying to FAT32.
-- **Create bootable ISO:** use a complete extracted Windows installation-media folder and Microsoft ADK `oscdimg.exe`. The app verifies BIOS/UEFI boot files, `setup.exe`, `sources/boot.wim` and an install image exist before running the tool. This does not certify the ISO's boot or installation behavior.
-- **Servicing engine:** optionally select an installed ADK `dism.exe`; leave blank for the host DISM. The matching ADK support files must remain with it. Installing ADK alone does not change the selected engine.
+- **Download Windows:** open Microsoft's official Windows 11/10 page, copy its direct ISO/ESD URL and exact SHA-256 hash, then download and verify inside ImageForge. Known Microsoft HTTPS delivery hosts are enforced across redirects. Downloads can be cancelled; failed, cancelled, invalid-format and hash-mismatched files are not published. This is a direct-link workflow, not an automatic version catalogue.
+- **Load ESD/SWM:** a selected edition is automatically exported to a new writable WIM cache before mounting. Select the first SWM part and keep every matching part together.
+- **Export / join / convert:** export selected or all editions to WIM/ESD. Complete SWM sets can be rejoined through export. Export stages into a new private partial file and only moves it to the requested output after completion. Failed image-export partials remain for diagnosis; original inputs are not replaced.
+- **Convert image to ISO:** select an install image plus matching original Windows setup media as a template. ImageForge copies boot/setup files into a new working folder, exports the selected/all image editions as install.wim, then runs ADK oscdimg. An install ESD alone does not contain the boot/setup files needed for a bootable ISO.
+- **Edition management:** permanently remove unwanted editions from an unmounted WIM, keeping at least one; work on a copy. Export afterward to reclaim unreferenced WIM resources. For a loaded offline target, read DISM's eligible higher editions and queue an upgrade. Conversion does not activate Windows or grant a license.
+- **VHD/VHDX:** inspect and mount compatible Windows virtual-disk images through DISM with index 1, using the existing ownership, save/discard and reconnection lifecycle. WIM-only integrity options are not passed for virtual disks.
+- **Deployed Windows:** select This PC (live) or the root of a different local Windows drive. Running Windows supports applicable packages and optional features; online MSU support requires Windows 11+. Offline drivers and eligible offline edition upgrades are available on offline targets. Drive identities are checked again before servicing. Changes to deployed/live installations are immediate; there is no discard. A mounted VHD volume needs an assigned drive letter for this direct-volume route.
+- **Host refresh:** choose original, matching Microsoft media and run Windows Setup's compatibility scan. Only a completed compatibility pass enables the interactive Setup launch. Microsoft signatures are checked; the setup-file hash and install-image size/timestamp are rechecked to detect media changes after the scan. The wizard does not pass quiet, license-acceptance, clean-install or compatibility-bypass flags. Windows Setup decides whether applications, settings and personal files can be preserved and controls any restarts. Do not use customized ImageForge media for this host-refresh route.
 
-Save/discard all mounts before exporting or splitting a source. ISO creation refuses any registered DISM mount whose source is under the media folder. Keep ISO output outside the input media tree.
+Presets continue to describe image-file projects. Registry tweaks, proprietary component removal and full unattended host refresh are not included.
 
 [Public documentation and feature roadmap](https://imageforge-preview-docs.loftydeer260.chatgpt.site/) · [Windows compatibility](docs/COMPATIBILITY.md) · [Requested feature roadmap](docs/ROADMAP.md)
 
 ## Run on Windows
 
-[Download the first Windows x64 preview](https://github.com/sethcroft/ImageForge/raw/refs/tags/v0.2.0-preview.1/downloads/v0.2.0-preview.1/ImageForge-win-x64.zip) · [Release notes](https://github.com/sethcroft/ImageForge/releases/tag/v0.2.0-preview.1)
+[Download Windows x64 preview 0.3](https://github.com/sethcroft/ImageForge/raw/refs/tags/v0.3.0-preview.1/downloads/v0.3.0-preview.1/ImageForge-win-x64.zip) · [Release notes](https://github.com/sethcroft/ImageForge/releases/tag/v0.3.0-preview.1)
 
-Extract the Windows x64 package and open `ImageForge.exe`. Accept the Windows administrator prompt. The self-contained package includes the .NET runtime; keep all packaged files together. It uses the DISM version included with your Windows installation. Use a Windows host that supports servicing the target image version. The preview executable is unsigned.
+Extract the Windows x64 package and open `ImageForge.exe`. Accept the Windows administrator prompt. The self-contained package includes the .NET runtime; keep all packaged files together. It uses the host DISM by default; an installed ADK DISM can be selected in Image tools. Use a Windows host that supports servicing the target image version. The preview executable is unsigned.
 
-1. Work on a copy of `install.wim` on a local writable drive. If you have an ISO, use **Import ISO** to create an editable media folder, then select `sources/install.wim`. For ESD, select its edition and use **Export edition** to create a WIM before mounting.
+1. Work on a copy of `install.wim` on a local writable drive. If you have an ISO, use **Import ISO** to create an editable media folder, then select `sources/install.wim`. For ESD/SWM, Load automatically prepares the selected edition in a writable WIM cache.
 2. In **Image**, browse to the WIM, read editions, select an edition, and select a new or empty mount folder. Mount the image.
-3. In **Integrate**, queue INF files, driver folders, and CAB/MSU update packages. Put update prerequisites before dependent packages. The app preserves your order; it does not resolve dependencies automatically.
+3. In **Drivers** and **Updates**, queue INF files, driver folders, and CAB/MSU packages. Put update prerequisites before dependent packages. The app preserves your order; it does not resolve dependencies automatically.
 4. In **Features**, refresh the mounted image's optional features, select entries, and queue enable/disable operations. Enabling includes parent features and uses `/LimitAccess`; features with missing payloads may require source media and will fail in this preview. Disabling retains the payload.
-5. In **Apply**, review and reorder the queue, then apply. Successful steps leave the queue; processing stops at the first failure. Inspect the log after any error because DISM may have made partial changes.
+5. In **Apply**, review and reorder the queue, then apply. Successful steps leave the queue; processing stops at the first failure. Inspect the diagnostics file after any error because DISM may have made partial changes.
 6. **Save & unmount** commits the mounted image to its original WIM. **Discard & unmount** drops all unsaved mounted changes, including previously applied steps. Pending queued steps are preserved.
 
 You can save a JSON preset containing the image path, edition index, mount directory, and pending operations. Loading a preset reads and verifies its source image but does not mount or apply anything. Presets do not include image files, drivers, packages, or previously completed steps.
@@ -38,17 +40,17 @@ The **Unattended** tab exports an amd64 answer file for computer name, locale, a
 
 ## Recovery and logs
 
-The application serializes its operations and allows one running instance per Windows account. It records mounts in `%LOCALAPPDATA%\ImageForge\mounts.json` and verifies source WIM, edition index, mount directory, and DISM status before servicing or unmounting. It does not claim mounts created by other applications.
+The application serializes its operations and allows one running instance per Windows account. It records mounts in `%LOCALAPPDATA%\ImageForge\mounts.json` and verifies source image file, edition index, mount directory, and DISM status before servicing or unmounting. It does not claim mounts created by other applications.
 
 If you close the app with an image mounted, it leaves the mount intact. Restart, enter the same mount directory, and choose **Reconnect owned mount**. If a mount is interrupted or DISM reports `Needs Remount`, preserve the journal and inspect `dism /Get-MountedImageInfo` and `%WINDIR%\Logs\DISM\dism.log`. Resolve DISM's actual state before retrying. Never delete mounted image contents manually. Save a preset before closing if you need to preserve the pending queue.
 
-The activity panel can be exported to a text file. The application blocks normal closing while a servicing operation is running. It does not terminate DISM or automatically restart Windows.
+Diagnostics are saved to files; there is no on-screen activity log or command output. Open the diagnostics directory from Help when troubleshooting. The application blocks normal closing while a servicing operation is running. It does not terminate DISM or automatically restart Windows.
 
 ## Scope
 
-Implemented: WIM/ESD edition listing, WIM mounting, driver integration, update integration, optional-feature enable/disable, ordered apply queue, commit/discard, mount reconnection, JSON presets, partial unattended XML, activity logs, folder discovery, single-edition WIM/ESD export, WIM splitting, ISO import, ADK ISO creation, and ADK DISM selection.
+Implemented: WIM/ESD edition listing, WIM mounting, driver integration, update integration, optional-feature enable/disable, ordered apply queue, commit/discard, mount reconnection, JSON presets, partial unattended XML, file-only diagnostics, progress reporting, verified Microsoft downloads, folder discovery, selected/all-edition export, SWM splitting/joining, edition management, ISO import/conversion, VHD/VHDX mounts, deployed/live target controls and guided interactive Windows Setup.
 
-Not implemented: NTLite's proprietary component-removal engine, AppX removal, dependency visualization, live OS servicing, registry tweaks, Windows download/update catalog integration, automatic package ordering, direct SWM editing/joining, VHD/VHDX editing, and boot/deployment verification. This is not a full NTLite replacement. No NTLite application code, artwork, or branding is bundled.
+Not implemented: NTLite's proprietary component-removal engine, AppX removal, dependency visualization, arbitrary registry tweaks, Windows download/update catalog integration, automatic package ordering, direct in-place SWM editing, native disk partitioning, and boot/deployment verification. This is not a full NTLite replacement. No NTLite application code, artwork, or branding is bundled.
 
 ## Build
 

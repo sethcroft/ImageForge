@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
@@ -14,14 +15,34 @@ public partial class MainWindow
 {
     private readonly ObservableCollection<ImageRow> _images = [];
     private readonly ObservableCollection<PresetEntry> _presets = [];
-    private sealed record ImageRow(string Path, ImageEdition Edition, long SizeBytes)
+    private sealed class ImageRow(string path, ImageEdition edition, long sizeBytes) : INotifyPropertyChanged
     {
-        public bool Mounted { get; set; }
+        public string Path { get; } = path;
+        public ImageEdition Edition { get; } = edition;
+        public long SizeBytes { get; } = sizeBytes;
+        private bool mounted;
+        public bool Mounted
+        {
+            get => mounted;
+            set { mounted = value; RefreshStatus(); }
+        }
+        public void RefreshStatus() => PropertyChanged?.Invoke(this, new(nameof(Status)));
+        public bool IsActive { get; private set; }
+        public bool Indeterminate { get; private set; }
+        public double ProgressValue { get; private set; }
+        public string ProgressLabel => Indeterminate ? "Working…" : $"{ProgressValue:0.#}%";
+        public event PropertyChangedEventHandler? PropertyChanged;
+        public void SetActivity(double? percentage)
+        {
+            IsActive = true; Indeterminate = percentage is null; ProgressValue = percentage ?? 0;
+            foreach (var name in new[] { nameof(IsActive), nameof(Indeterminate), nameof(ProgressValue), nameof(ProgressLabel) }) PropertyChanged?.Invoke(this, new(name));
+        }
+        public void ClearActivity() { IsActive = false; PropertyChanged?.Invoke(this, new(nameof(IsActive))); }
         public string Name => Edition.Name;
         public int Index => Edition.Index;
         public string Format => System.IO.Path.GetExtension(Path).TrimStart('.').ToUpperInvariant();
         public string SizeMb => (SizeBytes / 1024d / 1024d).ToString("N0");
-        public string Status => !File.Exists(Path) ? "Missing" : Mounted ? "Mounted" : Format == "ESD" ? "Export to edit" : "Available";
+        public string Status => !File.Exists(Path) ? "Missing" : Mounted ? "Mounted" : Format is "ESD" or "SWM" ? "Load to edit" : "Available";
     }
     private sealed record PresetEntry(string Path)
     {
@@ -100,15 +121,19 @@ public partial class MainWindow
     private void ImageSelection_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (_activeMount is not null || ImageList.SelectedItem is not ImageRow row) return;
+        if (!SwitchToImageProject()) { ImageList.SelectedItem = null; return; }
         ImagePathBox.Text = row.Path;
         _editionsSource = row.Path;
         var editions = _images.Where(r => r.Path.Equals(row.Path, StringComparison.OrdinalIgnoreCase)).Select(r => r.Edition).ToArray();
         EditionBox.ItemsSource = editions;
         EditionBox.SelectedItem = row.Edition;
+        UpdateMountBadge();
     }
 
     private async Task AddSourceAsync(string path)
     {
+        if (!SwitchToImageProject()) return;
+        _activitySource = path;
         path = Path.GetFullPath(path);
         var editions = await _dism.GetEditionsAsync(path);
         if (editions.Count == 0) throw new InvalidDataException("DISM returned no readable editions for " + path);
@@ -132,8 +157,8 @@ public partial class MainWindow
 
     private async void AddImage_Click(object sender, RoutedEventArgs e)
     {
-        var picker = FilePicker("Windows image files|*.wim;*.esd", true);
-        if (picker.ShowDialog(this) != true) return;
+        var picker = FilePicker("Windows image files|*.wim;*.esd;*.swm;*.vhd;*.vhdx", true);
+        if (picker.ShowDialog(this) != true) { _operationCancelled = true; return; }
         await Run("Read image sources", async () =>
         {
             RequireUnmounted();
@@ -144,7 +169,7 @@ public partial class MainWindow
     private async void AddDirectory_Click(object sender, RoutedEventArgs e)
     {
         var picker = new OpenFolderDialog { Title = "Scan a Windows image or installation-media folder" };
-        if (picker.ShowDialog(this) != true) return;
+        if (picker.ShowDialog(this) != true) { _operationCancelled = true; return; }
         await Run("Scan image folder", async () =>
         {
             RequireUnmounted();
@@ -187,10 +212,12 @@ public partial class MainWindow
         if (!source.Equals(_editionsSource, StringComparison.OrdinalIgnoreCase) || EditionBox.SelectedItem is not ImageEdition edition)
             throw new InvalidOperationException("Select a source edition in Image, or read editions for the selected source first.");
         var picker = new SaveFileDialog { Title = "Export selected edition to a NEW file", Filter = "WIM image|*.wim|ESD image|*.esd", FileName = "install-export.wim", OverwritePrompt = true };
-        if (picker.ShowDialog(this) != true) return;
-        await _dism.ExportEditionAsync(source, edition.Index, picker.FileName);
+        if (picker.ShowDialog(this) != true) { _operationCancelled = true; return; }
+        _activitySource = source;
+        if (ExportAllCheck.IsChecked == true) await _dism.ExportAllEditionsAsync(source, picker.FileName);
+        else await _dism.ExportEditionAsync(source, edition.Index, picker.FileName);
         await AddSourceAsync(picker.FileName);
-        Log("Export complete. This file contains the selected edition only, with its new index shown in Image.");
+        Log("Image export completed. The output edition indices are shown in Image.");
     });
 
     private async void SplitImage_Click(object sender, RoutedEventArgs e) => await Run("Split WIM image", async () =>
@@ -199,7 +226,7 @@ public partial class MainWindow
         if (!int.TryParse(SplitSizeBox.Text, out var size)) throw new ArgumentException("Enter a split size in MB, such as 3800.");
         var source = Path.GetFullPath(ImagePathBox.Text.Trim());
         var picker = new SaveFileDialog { Title = "Choose a NEW split-set filename in an empty output folder", Filter = "Split WIM|*.swm", FileName = "install.swm" };
-        if (picker.ShowDialog(this) != true) return;
+        if (picker.ShowDialog(this) != true) { _operationCancelled = true; return; }
         await _dism.SplitImageAsync(source, picker.FileName, size);
         Log("Split complete. Keep every SWM part together. A single resource can exceed the requested part size; check the actual files before copying to FAT32.");
     });
@@ -228,7 +255,7 @@ public partial class MainWindow
         if (await _dism.HasMountedSourceUnderAsync(media))
             throw new InvalidOperationException("A source image under this media folder is still mounted. Save/discard every mount before creating the ISO.");
         var picker = new SaveFileDialog { Title = "Create a NEW BIOS + UEFI Windows ISO", Filter = "ISO image|*.iso", FileName = "ImageForge.iso" };
-        if (picker.ShowDialog(this) != true) return;
+        if (picker.ShowDialog(this) != true) { _operationCancelled = true; return; }
         await ImageTools.CreateIsoAsync(OscdimgPathBox.Text.Trim(), media, picker.FileName, IsoLabelBox.Text.Trim(), Log);
         Log("ISO created. Test both installation and boot behavior in a disposable VM before deployment.");
     });

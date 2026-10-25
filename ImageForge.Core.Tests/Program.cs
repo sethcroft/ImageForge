@@ -29,7 +29,7 @@ try
     var driver = Path.Combine(temp, "driver & unusual name.inf"); File.WriteAllText(driver, "[Version]");
     var argsList = DismCommands.ForStep(temp, new("add-driver", driver));
     Check(argsList.Contains("/Driver:" + driver) && argsList.Count == 5, "driver path with spaces and shell metacharacters is a single argument");
-    Check(argsList.All(a => !a.Equals("/Online", StringComparison.OrdinalIgnoreCase)), "servicing commands exclusively target offline images");
+    Check(argsList.All(a => !a.Equals("/Online", StringComparison.OrdinalIgnoreCase)), "default image commands exclusively target offline images");
     Check(DismCommands.ForStep(temp, new("add-driver", temp)).Contains("/Recurse"), "driver directory explicitly requests recursive INF import");
     var enable = DismCommands.ForStep(temp, new("enable-feature", "NetFx3"));
     Check(enable.Contains("/LimitAccess") && enable.Contains("/All"), "feature enabling stays offline and includes parent features");
@@ -93,4 +93,90 @@ try
     Check(importOverwriteRejected && File.ReadAllText(Path.Combine(media, "sources", "boot.wim")) == "fixture", "ISO import rejects an existing destination before starting a process or modifying files");
 }
 finally { Directory.Delete(mediaTests, true); }
+
+Check(OperationProgress.Percentage("[==== 42.5%    ]") == 42.5, "DISM percentages become structured progress");
+Check(OperationProgress.Percentage(" 87% complete") == 87, "ISO progress is recognized without displaying tool text");
+Check(OperationProgress.Percentage(@"/Image:C:\media 42%\mount") is null, "paths containing percent signs never become progress");
+Check(OperationProgress.Percentage("[==== 101%]") is null, "out-of-range tool progress is rejected");
+Check(DismCommands.ForTarget(ServicingTarget.Running, new("enable-feature", "NetFx3")).Contains("/Online"), "running Windows is an explicit servicing target");
+Reject(() => DismCommands.ForTarget(ServicingTarget.Running, new("add-driver", "unused")), "live target refuses offline-only driver integration before filesystem access");
+Reject(() => DismCommands.ForTarget(ServicingTarget.Running, new("set-edition", "Professional")), "client edition upgrade cannot be queued as online servicing");
+Reject(() => DismCommands.TargetPrefix(new((ServicingTargetKind)99, null)), "unknown target kinds fail closed");
+Check(DismService.ParseTargetEditions("Target Edition : Professional\nTarget Edition : Enterprise\nOther : Ignore").SequenceEqual(new[] { "Professional", "Enterprise" }), "edition choices come from DISM's eligible target records");
+Check(SetupCompatibility.FromExitCode(unchecked((int)0xC1900210)).CanProceed, "only completed compatibility scan code authorizes the next wizard step");
+Check(!SetupCompatibility.FromExitCode(unchecked((int)0xC1900204)).CanProceed && !SetupCompatibility.FromExitCode(0).CanProceed, "blocked migration and generic success cannot masquerade as a passed upgrade scan");
+Check(!HostRefresh.CompatibilityArguments.Contains("/Quiet") && !HostRefresh.CompatibilityArguments.Contains("/EULA"), "compatibility scan preserves Setup interaction and does not accept a license");
+Reject(() => MicrosoftMediaDownload.ValidateUri("https://software-download.microsoft.com.evil.example/test.iso"), "lookalike Microsoft domains are rejected");
+Reject(() => MicrosoftMediaDownload.ValidateUri("http://software-download.microsoft.com/test.iso"), "media download requires HTTPS");
+Reject(() => MicrosoftMediaDownload.ValidateUri("https://user:password@software-download.microsoft.com/test.iso"), "credential-bearing download URLs are rejected");
+Reject(() => MicrosoftMediaDownload.ValidateSha256("not-a-hash"), "missing or malformed Microsoft checksum is rejected");
+
+var workflowRoot = Path.Combine(Path.GetTempPath(), "imageforge-workflows-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(workflowRoot);
+try
+{
+    var vhd = Path.Combine(workflowRoot, "disk.vhdx"); File.WriteAllText(vhd, "fixture");
+    var mountArgs = ImageTools.MountArguments(vhd, 1, Path.Combine(workflowRoot, "mount"));
+    Check(!mountArgs.Contains("/CheckIntegrity"), "VHD mount excludes WIM-only integrity options");
+    Reject(() => ImageTools.MountArguments(vhd, 2, Path.Combine(workflowRoot, "mount")), "virtual-disk mount rejects indexes other than one");
+    void SplitPart(string path, ushort index, ushort total, byte identity)
+    {
+        var bytes = new byte[44]; "MSWIM\0\0\0"u8.CopyTo(bytes); bytes[24] = identity;
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(40), index);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(42), total); File.WriteAllBytes(path, bytes);
+    }
+    var first = Path.Combine(workflowRoot, "install.swm"); var second = Path.Combine(workflowRoot, "install2.swm");
+    SplitPart(first, 1, 2, 7); SplitPart(second, 2, 2, 7);
+    Check(ImageTools.ExportArguments(first, 1, Path.Combine(workflowRoot, "joined.wim")).Contains("/SWMFile:" + Path.Combine(workflowRoot, "install*.swm")), "complete split sets carry a resource reference when joined by export");
+    File.Delete(second); var missingRejected = false;
+    try { ImageTools.SplitWimPattern(first); } catch (InvalidDataException) { missingRejected = true; }
+    Check(missingRejected, "incomplete split sets are refused before export");
+    SplitPart(second, 2, 2, 8); var mixedRejected = false;
+    try { ImageTools.SplitWimPattern(first); } catch (InvalidDataException) { mixedRejected = true; }
+    Check(mixedRejected, "mixed split-set identities are refused");
+
+    var media = Path.Combine(workflowRoot, "template"); Directory.CreateDirectory(media);
+    foreach (var relative in new[] { "setup.exe", "sources/boot.wim", "boot/etfsboot.com", "efi/microsoft/boot/efisys.bin", "sources/install.esd", "support/info.txt" })
+    {
+        var file = Path.Combine(media, relative); Directory.CreateDirectory(Path.GetDirectoryName(file)!); File.WriteAllText(file, relative);
+    }
+    var copied = Path.Combine(workflowRoot, "new-media"); await MediaTemplate.CopyAsync(media, copied);
+    Check(File.Exists(Path.Combine(copied, "sources", "boot.wim")) && !File.Exists(Path.Combine(copied, "sources", "install.esd")), "conversion template retains setup files while excluding the old installation image");
+    var reuseRejected = false; try { await MediaTemplate.CopyAsync(media, copied); } catch (ArgumentException) { reuseRejected = true; }
+    Check(reuseRejected && File.ReadAllText(Path.Combine(copied, "setup.exe")) == "setup.exe", "template copying refuses reused output without changing its files");
+
+    var payload = new byte[35000]; "CD001"u8.CopyTo(payload.AsSpan(16 * 2048 + 1));
+    var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(payload));
+    var download = Path.Combine(workflowRoot, "verified.iso");
+    using (var client = new MicrosoftMediaDownload(new MediaHandler(_ => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.ByteArrayContent(payload) })))
+    { await client.DownloadAsync("https://software-download.microsoft.com/test.iso", digest, download); }
+    Check(File.ReadAllBytes(download).SequenceEqual(payload), "download publishes exactly the SHA-256-verified ISO bytes");
+    var mismatch = Path.Combine(workflowRoot, "mismatch.iso");
+    using (var client = new MicrosoftMediaDownload(new MediaHandler(_ => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.ByteArrayContent(payload) })))
+    {
+        var rejected = false;
+        try { await client.DownloadAsync("https://software-download.microsoft.com/test.iso", new string('0', 64), mismatch); } catch (InvalidDataException) { rejected = true; }
+        Check(rejected && !File.Exists(mismatch) && !Directory.EnumerateFiles(workflowRoot, "*.partial").Any(), "checksum mismatch leaves neither a published image nor partial download");
+    }
+    using (var client = new MicrosoftMediaDownload(new MediaHandler(_ => { var response = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.Redirect); response.Headers.Location = new Uri("https://evil.example/test.iso"); return response; })))
+    {
+        var redirectRejected = false;
+        try { await client.DownloadAsync("https://software-download.microsoft.com/test.iso", digest, Path.Combine(workflowRoot, "redirect.iso")); } catch (ArgumentException) { redirectRejected = true; }
+        Check(redirectRejected, "download redirect cannot escape the Microsoft host allowlist");
+    }
+    using (var client = new MicrosoftMediaDownload(new MediaHandler(_ => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.ByteArrayContent(payload) })))
+    {
+        var cancelled = new CancellationTokenSource(); cancelled.Cancel(); var cancellationObserved = false;
+        try { await client.DownloadAsync("https://software-download.microsoft.com/test.iso", digest, Path.Combine(workflowRoot, "cancelled.iso"), cancellationToken: cancelled.Token); } catch (OperationCanceledException) { cancellationObserved = true; }
+        Check(cancellationObserved && !File.Exists(Path.Combine(workflowRoot, "cancelled.iso")), "cancelled download never publishes a media file");
+    }
+}
+finally { Directory.Delete(workflowRoot, true); }
+
 Console.WriteLine($"{count} checks passed. No Windows servicing commands were executed.");
+
+sealed class MediaHandler(Func<System.Net.Http.HttpRequestMessage, System.Net.Http.HttpResponseMessage> response) : System.Net.Http.HttpMessageHandler
+{
+    protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+    { cancellationToken.ThrowIfCancellationRequested(); return Task.FromResult(response(request)); }
+}

@@ -20,13 +20,54 @@ public static class ImageTools
 
     public static IReadOnlyList<string> ExportArguments(string image, int index, string destination)
     {
-        image = DismCommands.ExistingFile(image, ".wim", ".esd");
+        image = DismCommands.ExistingFile(image, ".wim", ".esd", ".swm");
         if (index < 1) throw new ArgumentException("Select a positive edition index.");
         var extension = Path.GetExtension(destination).ToLowerInvariant();
         if (extension is not (".wim" or ".esd")) throw new ArgumentException("Export to a new .wim or .esd file.");
         destination = NewOutputFile(destination, extension);
-        return ["/English", "/Export-Image", $"/SourceImageFile:{image}", $"/SourceIndex:{index}",
-            $"/DestinationImageFile:{destination}", $"/Compress:{(extension == ".esd" ? "recovery" : "max")}", "/CheckIntegrity"];
+        var args = new List<string> { "/English", "/Export-Image", $"/SourceImageFile:{image}", $"/SourceIndex:{index}",
+            $"/DestinationImageFile:{destination}", $"/Compress:{(extension == ".esd" ? "recovery" : "max")}", "/CheckIntegrity" };
+        if (Path.GetExtension(image).Equals(".swm", StringComparison.OrdinalIgnoreCase)) args.Add("/SWMFile:" + SplitWimPattern(image));
+        return args;
+    }
+
+    public static IReadOnlyList<string> MountArguments(string image, int index, string mount)
+    {
+        image = DismCommands.ExistingFile(image, ".wim", ".vhd", ".vhdx");
+        mount = DismCommands.SafePath(mount);
+        var virtualDisk = Path.GetExtension(image).ToLowerInvariant() is ".vhd" or ".vhdx";
+        if (index < 1 || virtualDisk && index != 1) throw new ArgumentException("Choose a valid image index. VHD/VHDX images use index 1.");
+        var args = new List<string> { "/English", "/Mount-Image", $"/ImageFile:{image}", $"/Index:{index}", $"/MountDir:{mount}" };
+        if (!virtualDisk) args.Add("/CheckIntegrity");
+        return args;
+    }
+
+    public static string SplitWimPattern(string firstPart)
+    {
+        firstPart = DismCommands.ExistingFile(firstPart, ".swm");
+        byte[] Header(string path)
+        {
+            using var stream = File.OpenRead(path); var data = new byte[44]; stream.ReadExactly(data);
+            if (!data.AsSpan(0, 8).SequenceEqual("MSWIM\0\0\0"u8)) throw new InvalidDataException("A split-set file has an invalid WIM header.");
+            return data;
+        }
+        var first = Header(firstPart);
+        var count = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(first.AsSpan(42));
+        if (System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(first.AsSpan(40)) != 1 || count is < 1 or > 4096)
+            throw new ArgumentException("Select the first SWM part, such as install.swm, with every part in the same folder.");
+        var prefix = Path.GetFileNameWithoutExtension(firstPart);
+        if (prefix.IndexOfAny(['*', '?']) >= 0) throw new ArgumentException("Split-set filenames cannot contain wildcards.");
+        var pattern = Path.Combine(Path.GetDirectoryName(firstPart)!, prefix + "*.swm");
+        var parts = new HashSet<ushort>();
+        foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(firstPart)!, prefix + "*.swm"))
+        {
+            var header = Header(file); var number = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(40));
+            if (!header.AsSpan(24, 16).SequenceEqual(first.AsSpan(24, 16)) ||
+                System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(42)) != count || number < 1 || number > count || !parts.Add(number))
+                throw new InvalidDataException("The selected SWM files contain mixed, duplicated, or invalid parts.");
+        }
+        if (parts.Count != count) throw new InvalidDataException("The SWM set is incomplete. Keep every original part in the same folder.");
+        return pattern;
     }
 
     public static IReadOnlyList<string> SplitArguments(string image, string destination, int sizeMb)
@@ -83,7 +124,8 @@ public static class ImageTools
             {
                 foreach (var file in Directory.EnumerateFiles(entry.Path))
                 {
-                    if (Path.GetExtension(file).ToLowerInvariant() is ".wim" or ".esd")
+                    var extension = Path.GetExtension(file).ToLowerInvariant();
+                    if (extension is ".wim" or ".esd" or ".vhd" or ".vhdx" || extension == ".swm" && IsFirstSplitWim(file))
                     {
                         paths.Add(file);
                         if (paths.Count >= 256) { limited = true; break; }
@@ -100,6 +142,17 @@ public static class ImageTools
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { skipped++; }
         }
         return new(paths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray(), skipped, limited);
+    }
+
+    private static bool IsFirstSplitWim(string path)
+    {
+        try
+        {
+            using var input = File.OpenRead(path); var header = new byte[44]; input.ReadExactly(header);
+            return header.AsSpan(0, 8).SequenceEqual("MSWIM\0\0\0"u8) &&
+                System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(40)) == 1;
+        }
+        catch (IOException) { return false; }
     }
 
     // The script is fixed. Caller-selected paths travel in the child environment,
