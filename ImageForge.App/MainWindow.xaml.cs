@@ -37,7 +37,7 @@ public partial class MainWindow : Window
         PlanList.ItemsSource = _steps;
         _steps.CollectionChanged += (_, _) => QueueBadge.Text = $"{_steps.Count} change{(_steps.Count == 1 ? "" : "s")} queued";
         MountPathBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ImageForge", "Mount");
-        Log("ImageForge 0.3 — image and deployed Windows workspace.");
+        Log("ImageForge 0.4 — image and deployed Windows workspace.");
         UpdateMountBadge();
     }
 
@@ -119,7 +119,8 @@ public partial class MainWindow : Window
         SharedSaveButton.IsEnabled = _activeMount is not null;
         SharedDiscardButton.IsEnabled = _activeMount is not null;
         MountImageButton.IsEnabled = _activeMount is null && _installation is null && EditionBox.SelectedItem is not null;
-        foreach (var row in _images) row.Mounted = _activeMount is not null && row.Path.Equals(_activeImage, StringComparison.OrdinalIgnoreCase);
+        foreach (var row in _images) row.Mounted = _activeMount is not null && row.Index == _activeIndex && row.Path.Equals(_activeImage, StringComparison.OrdinalIgnoreCase);
+        UpdateEditingNavigation();
     }
     private string RequireMount() => _activeMount ?? throw new InvalidOperationException("Mount an image or reconnect an ImageForge-owned mount first.");
     private static string ActivityTitle(string title) => title switch

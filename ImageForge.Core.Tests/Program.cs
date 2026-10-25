@@ -13,6 +13,13 @@ void Reject(Action action, string message)
     throw new Exception("FAILED (accepted invalid input): " + message);
 }
 
+var editingPages = new[] { 1, 2, 3, 4, 6, 10, 11, 12, 13, 14 };
+Check(editingPages.All(page => ImageForge.App.WorkspaceNavigation.ResolvePage(page, false) == 0), "editing navigation remains at Image before any target is loaded, including preset review");
+Check(editingPages.All(page => ImageForge.App.WorkspaceNavigation.ResolvePage(page, true) == page), "loaded image, reconnected mount and deployed targets unlock the editing pages");
+Check(new[] { 0, 5, 7, 8, 9 }.All(page => ImageForge.App.WorkspaceNavigation.ResolvePage(page, false) == page), "image tools, compatibility, downloads and host refresh stay reachable before loading an image");
+Check(ImageForge.App.WorkspaceNavigation.ResolvePage(6, false) == 0 && ImageForge.App.WorkspaceNavigation.ResolvePage(6, true) == 6, "unloading a target returns Apply to Image without restricting a loaded session");
+Check(new[] { -1, 15, 100 }.All(page => ImageForge.App.WorkspaceNavigation.ResolvePage(page, true) == 0), "invalid navigation destinations resolve to Image");
+
 var editions = DismParser.ParseEditions("Index : 1\r\nName : Windows 11 Home\r\nDescription : Home: desktop\r\nSize : 2\r\n\r\nIndex : 6\r\nName : Windows 11 Pro\r\nDescription : Pro\r\n");
 Check(editions.Count == 2 && editions[0].Index == 1 && editions[1].Index == 6 && editions[0].Description == "Home: desktop", "edition blocks retain index and colons inside values");
 Check(DismParser.ParseEditions("Index : invalid\nName : Ignore").Count == 0, "invalid edition indices are excluded");

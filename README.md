@@ -1,8 +1,18 @@
 # ImageForge
 
-A Windows desktop application for preparing offline Windows installation images, inspired by NTLite's image-servicing workflows. Built with C#/.NET 8 and WPF, using Microsoft's DISM executable. Preview version 0.3; this is an independent implementation with a smaller feature set.
+A Windows desktop application for preparing offline Windows installation images, inspired by NTLite's image-servicing workflows. Built with C#/.NET 8 and WPF, using Microsoft's DISM executable. Preview version 0.4; this is an independent implementation with a smaller feature set.
 
-## Preview 0.3: progress, media and installed Windows
+## Preview 0.4: desktop design
+
+The workspace now follows the reference layout: a compact Image / Preset / Tools menu and contextual toolbar, **Start → Image** on the left, an image library in the center, and a searchable **Presets → File** panel on the right. Editing navigation is hidden until an image is mounted/reconnected or a deployed Windows target is selected. Saving/unmounting returns to Image and hides those sections.
+
+Loaded sessions show **Integrate** (Updates, Drivers, Registry, Post-Setup), **Remove** (Components), **Configure** (Features, Settings, Scheduled Tasks, Unattended), and **Finish** (Apply). Registry, Post-Setup, Components, Settings and Scheduled Tasks are explicitly **Planned** design pages, with no pretend data or actions. Drivers and Updates show their real pending queues. The top commands change with the selected page; presets are displayed on the Image page.
+
+The library separates Deployed Windows controls, Read-only ESD/SWM sources and Other image sources. File sources expand to their actual editions. ISO import still copies media into a working directory; this release does not introduce a persistent read-only ISO mount. Source and mount-directory controls live in the collapsible **Selected image · Source and mount options** panel. Double-click an edition to load it. A new session preserves the source library, but clearing a pending queue requires confirmation; loaded images must be saved/unmounted first.
+
+[Design release notes and Windows review checklist](docs/PREVIEW-0.4.md). ImageForge uses its own branding and UI elements; it is an independent implementation, not a complete NTLite replacement.
+
+## Existing workflows from preview 0.3
 
 The desktop has **no code/command output or log panel**. The bottom bar shows short loading/saving/downloading stages and genuine progress when the underlying operation provides it; otherwise it uses an indeterminate indicator. Active image rows show the current edition's progress. Diagnostics go to a per-session file in `%LOCALAPPDATA%\ImageForge\Diagnostics`, accessible from Help.
 
@@ -23,7 +33,7 @@ Presets continue to describe image-file projects. Registry tweaks, proprietary c
 
 ## Run on Windows
 
-[Download Windows x64 preview 0.3](https://github.com/sethcroft/ImageForge/raw/refs/tags/v0.3.0-preview.1/downloads/v0.3.0-preview.1/ImageForge-win-x64.zip) · [Release notes](https://github.com/sethcroft/ImageForge/releases/tag/v0.3.0-preview.1)
+[Download Windows x64 preview 0.4](https://github.com/sethcroft/ImageForge/raw/refs/tags/v0.4.0-preview.1/downloads/v0.4.0-preview.1/ImageForge-win-x64.zip) · [Release notes](https://github.com/sethcroft/ImageForge/releases/tag/v0.4.0-preview.1)
 
 Extract the Windows x64 package and open `ImageForge.exe`. Accept the Windows administrator prompt. The self-contained package includes the .NET runtime; keep all packaged files together. It uses the host DISM by default; an installed ADK DISM can be selected in Image tools. Use a Windows host that supports servicing the target image version. The preview executable is unsigned.
 

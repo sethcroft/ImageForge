@@ -38,7 +38,9 @@ public partial class MainWindow
             foreach (var name in new[] { nameof(IsActive), nameof(Indeterminate), nameof(ProgressValue), nameof(ProgressLabel) }) PropertyChanged?.Invoke(this, new(name));
         }
         public void ClearActivity() { IsActive = false; PropertyChanged?.Invoke(this, new(nameof(IsActive))); }
-        public string Name => Edition.Name;
+        public string Category => Format is "ESD" or "SWM" ? "Read-only" : "Other";
+        public string Modified => File.Exists(Path) ? File.GetLastWriteTime(Path).ToString("dd MMM yyyy HH:mm") : "—";
+        public string Name => $"{Edition.Index} · {Edition.Name}";
         public int Index => Edition.Index;
         public string Format => System.IO.Path.GetExtension(Path).TrimStart('.').ToUpperInvariant();
         public string SizeMb => (SizeBytes / 1024d / 1024d).ToString("N0");
@@ -47,7 +49,7 @@ public partial class MainWindow
     private sealed record PresetEntry(string Path)
     {
         public string Name => System.IO.Path.GetFileNameWithoutExtension(Path);
-        public string Modified => File.Exists(Path) ? File.GetLastWriteTime(Path).ToString("g") : "File missing";
+        public string Modified => File.Exists(Path) ? File.GetLastWriteTime(Path).ToString("dd MMM HH:mm") : "File missing";
     }
     private sealed record WorkspacePreferences(string? Dism, string? Oscdimg, List<string>? Presets);
     private static string PreferencesPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ImageForge", "workspace.json");
@@ -57,8 +59,9 @@ public partial class MainWindow
         ImageList.ItemsSource = _images;
         PresetList.ItemsSource = _presets;
         var view = CollectionViewSource.GetDefaultView(_images);
+        view.GroupDescriptions.Add(new PropertyGroupDescription("Category"));
         view.GroupDescriptions.Add(new PropertyGroupDescription("Path"));
-        view.Filter = value => value is ImageRow row && (string.IsNullOrWhiteSpace(ImageFilterBox.Text) ||
+        view.Filter = value => value is ImageRow row && (SourceKindFilter.SelectedIndex == 0 || row.Category == ((SourceKindFilter.SelectedItem as ComboBoxItem)?.Content as string)) && (string.IsNullOrWhiteSpace(ImageFilterBox.Text) ||
             (row.Name + " " + row.Path + " " + row.Format).Contains(ImageFilterBox.Text, StringComparison.OrdinalIgnoreCase));
         OscdimgPathBox.Text = ImageTools.FindOscdimg() ?? "";
         if (File.Exists(PreferencesPath))
@@ -75,7 +78,8 @@ public partial class MainWindow
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
             { Log("Workspace preferences could not be read: " + ex.Message); }
         }
-        NavigationList.SelectedIndex = 0;
+        InitializeDesignQueues();
+        Navigate(0);
     }
 
     private void SavePreferences()
@@ -99,11 +103,10 @@ public partial class MainWindow
         SavePreferences();
     }
 
-    private void Navigate(int index) => NavigationList.SelectedIndex = index;
     private void Navigation_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (WorkspaceTabs is not null && NavigationList.SelectedItem is ListBoxItem { Tag: string tag } && int.TryParse(tag, out var index))
-            WorkspaceTabs.SelectedIndex = index;
+        if (!_navigating && WorkspaceTabs is not null && NavigationList.SelectedItem is ListBoxItem { Tag: string tag } && int.TryParse(tag, out var index))
+            Navigate(index);
     }
     private void ShowTools_Click(object sender, RoutedEventArgs e) => Navigate(5);
     private void ShowCompatibility_Click(object sender, RoutedEventArgs e) => Navigate(7);
@@ -151,6 +154,7 @@ public partial class MainWindow
         foreach (var existing in _images.Where(r => r.Path.Equals(path, StringComparison.OrdinalIgnoreCase)).ToArray()) _images.Remove(existing);
         var size = new FileInfo(path).Length;
         foreach (var edition in editions) _images.Add(new(path, edition, size));
+        SideImageCount.Text = _images.Count.ToString();
         ImageCountBadge.Text = $"{_images.Count} edition{(_images.Count == 1 ? "" : "s")}";
         ImageEmptyState.Visibility = _images.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -193,6 +197,7 @@ public partial class MainWindow
         EditionBox.ItemsSource = null;
         ImagePathBox.Clear();
         _editionsSource = null;
+        SideImageCount.Text = _images.Count.ToString();
         ImageCountBadge.Text = $"{_images.Count} editions";
         ImageEmptyState.Visibility = _images.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Log("Removed source from the library. No files were deleted.");

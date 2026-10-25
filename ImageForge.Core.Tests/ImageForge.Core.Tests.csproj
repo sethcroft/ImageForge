@@ -6,4 +6,5 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../ImageForge.Core/ImageForge.Core.csproj" /></ItemGroup>
+  <ItemGroup><Compile Include="../ImageForge.App/WorkspaceNavigation.cs" Link="WorkspaceNavigation.cs" /></ItemGroup>
 </Project>
