@@ -39,17 +39,25 @@ public partial class MainWindow
         }
         public void ClearActivity() { IsActive = false; PropertyChanged?.Invoke(this, new(nameof(IsActive))); }
         public string Category => Format is "ESD" or "SWM" ? "Read-only" : "Other";
-        public string Modified => File.Exists(Path) ? File.GetLastWriteTime(Path).ToString("dd MMM yyyy HH:mm") : "—";
+        public bool CompactDates { get; set; } = true;
+        public string Description => Edition.Description;
+        public string Modified => File.Exists(Path) ? File.GetLastWriteTime(Path).ToString(CompactDates ? "dd MMM HH:mm" : "yyyy-MM-dd HH:mm:ss") : "—";
+        public void RefreshPresentation() => PropertyChanged?.Invoke(this, new(nameof(Modified)));
         public string Name => $"{Edition.Index} · {Edition.Name}";
         public int Index => Edition.Index;
         public string Format => System.IO.Path.GetExtension(Path).TrimStart('.').ToUpperInvariant();
         public string SizeMb => (SizeBytes / 1024d / 1024d).ToString("N0");
         public string Status => !File.Exists(Path) ? "Missing" : Mounted ? "Mounted" : Format is "ESD" or "SWM" ? "Load to edit" : "Available";
     }
-    private sealed record PresetEntry(string Path)
+    private sealed class PresetEntry(string path) : INotifyPropertyChanged
     {
+        public string Path { get; } = path;
+        public bool CompactDates { get; set; } = true;
+        public GridLength DateColumnWidth => new(CompactDates ? 95 : 145);
         public string Name => System.IO.Path.GetFileNameWithoutExtension(Path);
-        public string Modified => File.Exists(Path) ? File.GetLastWriteTime(Path).ToString("dd MMM HH:mm") : "File missing";
+        public string Modified => File.Exists(Path) ? File.GetLastWriteTime(Path).ToString(CompactDates ? "dd MMM HH:mm" : "yyyy-MM-dd HH:mm:ss") : "File missing";
+        public event PropertyChangedEventHandler? PropertyChanged;
+        public void RefreshPresentation() { PropertyChanged?.Invoke(this, new(nameof(Modified))); PropertyChanged?.Invoke(this, new(nameof(DateColumnWidth))); }
     }
     private sealed record WorkspacePreferences(string? Dism, string? Oscdimg, List<string>? Presets);
     private static string PreferencesPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ImageForge", "workspace.json");
@@ -98,7 +106,7 @@ public partial class MainWindow
     {
         path = Path.GetFullPath(path);
         foreach (var previous in _presets.Where(p => p.Path.Equals(path, StringComparison.OrdinalIgnoreCase)).ToArray()) _presets.Remove(previous);
-        _presets.Insert(0, new(path));
+        _presets.Insert(0, new(path) { CompactDates = _toolSettings.CompactDates });
         while (_presets.Count > 100) _presets.RemoveAt(_presets.Count - 1);
         SavePreferences();
     }
@@ -153,7 +161,7 @@ public partial class MainWindow
         path = Path.GetFullPath(path);
         foreach (var existing in _images.Where(r => r.Path.Equals(path, StringComparison.OrdinalIgnoreCase)).ToArray()) _images.Remove(existing);
         var size = new FileInfo(path).Length;
-        foreach (var edition in editions) _images.Add(new(path, edition, size));
+        foreach (var edition in editions) _images.Add(new(path, edition, size) { CompactDates = _toolSettings.CompactDates });
         SideImageCount.Text = _images.Count.ToString();
         ImageCountBadge.Text = $"{_images.Count} edition{(_images.Count == 1 ? "" : "s")}";
         ImageEmptyState.Visibility = _images.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

@@ -11,12 +11,13 @@ internal sealed class DiagnosticLog : IDisposable
     private bool unavailable;
     public bool Available => !unavailable;
     public string DirectoryPath { get; }
+    public string SessionPath { get; }
     public DiagnosticLog()
     {
         DirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ImageForge", "Diagnostics");
         Directory.CreateDirectory(DirectoryPath);
-        var path = Path.Combine(DirectoryPath, $"imageforge-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.log");
-        writer = new StreamWriter(new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read), new UTF8Encoding(false)) { AutoFlush = true };
+        SessionPath = Path.Combine(DirectoryPath, $"imageforge-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.log");
+        writer = new StreamWriter(new FileStream(SessionPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read), new UTF8Encoding(false)) { AutoFlush = true };
     }
     public void Write(string text)
     {

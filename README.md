@@ -1,8 +1,16 @@
 # ImageForge
 
-A Windows desktop application for preparing offline Windows installation images, inspired by NTLite's image-servicing workflows. Built with C#/.NET 8 and WPF, using Microsoft's DISM executable. Preview version 0.4; this is an independent implementation with a smaller feature set.
+A Windows desktop application for preparing offline Windows installation images, inspired by NTLite's image-servicing workflows. Built with C#/.NET 8 and WPF, using Microsoft's DISM executable. Preview version 0.5; this is an independent implementation with a smaller feature set.
 
-## Preview 0.4: desktop design
+## Preview 0.5: application menu and tool settings
+
+The hamburger menu before **Image** now opens **New instance / Settings / Check for updates / Manage license / Export HW list / Send logs / About / Exit**, matching the requested menu order.
+
+Settings uses searchable expandable sections and toggle switches. Larger fonts, the info bar, description columns and compact dates work and persist; DISM selection uses the existing engine preference. Unsupported options are disabled and explained. Release checks show stable/preview versions from GitHub and offer manual release links; optional daily startup checking is off by default. There is no automatic installer. Manage license displays ImageForge's actual MIT terms with no activation requirement. Hardware export creates a local ImageForge JSON report. Send logs prepares a local ZIP containing the session log and only presets you explicitly select; nothing is uploaded or emailed.
+
+New instance remains disabled because the existing per-account single-instance rule protects the mount journal. About and Exit use the real program information and existing closing safeguards. [Details and Windows dialog-review checklist](docs/PREVIEW-0.5.md).
+
+## Desktop design from preview 0.4
 
 The workspace now follows the reference layout: a compact Image / Preset / Tools menu and contextual toolbar, **Start → Image** on the left, an image library in the center, and a searchable **Presets → File** panel on the right. Editing navigation is hidden until an image is mounted/reconnected or a deployed Windows target is selected. Saving/unmounting returns to Image and hides those sections.
 
@@ -33,7 +41,7 @@ Presets continue to describe image-file projects. Registry tweaks, proprietary c
 
 ## Run on Windows
 
-[Download Windows x64 preview 0.4](https://github.com/sethcroft/ImageForge/raw/refs/tags/v0.4.0-preview.1/downloads/v0.4.0-preview.1/ImageForge-win-x64.zip) · [Release notes](https://github.com/sethcroft/ImageForge/releases/tag/v0.4.0-preview.1)
+[Download Windows x64 preview 0.5](https://github.com/sethcroft/ImageForge/raw/refs/tags/v0.5.0-preview.1/downloads/v0.5.0-preview.1/ImageForge-win-x64.zip) · [Release notes](https://github.com/sethcroft/ImageForge/releases/tag/v0.5.0-preview.1)
 
 Extract the Windows x64 package and open `ImageForge.exe`. Accept the Windows administrator prompt. The self-contained package includes the .NET runtime; keep all packaged files together. It uses the host DISM by default; an installed ADK DISM can be selected in Image tools. Use a Windows host that supports servicing the target image version. The preview executable is unsigned.
 

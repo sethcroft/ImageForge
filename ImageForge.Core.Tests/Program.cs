@@ -180,6 +180,49 @@ try
 }
 finally { Directory.Delete(workflowRoot, true); }
 
+var stableVersion = ToolRelease.Parse("v0.5.0")!;
+var previewVersion = ToolRelease.Parse("v0.5.0-preview.10")!;
+Check(stableVersion.CompareTo(previewVersion) > 0, "stable releases sort after previews of the same version");
+Check(previewVersion.CompareTo(ToolRelease.Parse("v0.5.0-preview.2")) > 0, "preview version numbers compare numerically");
+Check(new[] { "v0.5", "v0.5.0/../../evil", "https://evil.example", "v0.5.0-preview.-1" }.All(tag => ToolRelease.Parse(tag) is null), "release tags reject invalid versions and injected URL paths");
+var catalog = ReleaseCatalog.Parse("""
+[{"draft":false,"prerelease":true,"tag_name":"v0.4.0-preview.1"},
+ {"draft":false,"prerelease":true,"tag_name":"v0.5.0-preview.2"},
+ {"draft":false,"prerelease":false,"tag_name":"v0.4.0"},
+ {"draft":true,"prerelease":false,"tag_name":"v9.0.0"},
+ {"draft":false,"prerelease":false,"tag_name":"v8.0.0-preview.1"},
+ {"draft":false,"prerelease":false,"tag_name":"v0.5.0/evil"}]
+""");
+Check(catalog.Stable?.Tag == "v0.4.0" && catalog.Preview?.Tag == "v0.5.0-preview.2", "catalog selects highest valid stable and preview while ignoring drafts and inconsistent tags");
+Check(catalog.Preview!.Page.AbsoluteUri == "https://github.com/sethcroft/ImageForge/releases/tag/v0.5.0-preview.2", "release links are constructed under the fixed ImageForge repository");
+Check(ReleaseCatalog.Parse("[]") is { Stable: null, Preview: null }, "empty release catalogs report no versions rather than fabricating one");
+var supportRoot = Path.Combine(Path.GetTempPath(), "imageforge-support-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(supportRoot);
+try
+{
+    var log = Path.Combine(supportRoot, "session.log"); File.WriteAllText(log, "test diagnostic fixture");
+    var preset = Path.Combine(supportRoot, "private-filename.json"); File.WriteAllText(preset, "{}");
+    var output = Path.Combine(supportRoot, "support.zip");
+    SupportPackage.Create(output, "test", log, [preset]);
+    using (var archive = System.IO.Compression.ZipFile.OpenRead(output))
+    {
+        Check(archive.Entries.Select(e => e.FullName).Order(StringComparer.Ordinal).SequenceEqual(new[] { "README.txt", "diagnostics/session.log", "presets/preset-01.json" }), "support ZIP contains only its summary, session log and explicitly selected presets with fixed safe entry names");
+        using var reader = new StreamReader(archive.GetEntry("diagnostics/session.log")!.Open());
+        Check(reader.ReadToEnd() == "test diagnostic fixture", "support ZIP preserves the selected session log");
+    }
+    var original = File.ReadAllBytes(output); var refused = false;
+    try { SupportPackage.Create(output, "test", log, []); } catch (IOException) { refused = true; }
+    Check(refused && File.ReadAllBytes(output).SequenceEqual(original), "support packaging never overwrites an existing output");
+    var invalid = Path.Combine(supportRoot, "invalid.zip");
+    Reject(() => SupportPackage.Create(invalid, "test", log, [log]), "support presets must be explicitly selected JSON files");
+    Check(!File.Exists(invalid) && !Directory.EnumerateFiles(supportRoot, "*.partial").Any(), "failed support packaging cleans temporary files and publishes no ZIP");
+    var oversize = Path.Combine(supportRoot, "large.json"); File.WriteAllBytes(oversize, new byte[1024 * 1024 + 1]);
+    var bounded = false;
+    try { SupportPackage.Create(invalid, "test", log, [oversize]); } catch (IOException) { bounded = true; }
+    Check(bounded && !File.Exists(invalid), "support preset size limits are enforced before publication");
+}
+finally { Directory.Delete(supportRoot, true); }
+
 Console.WriteLine($"{count} checks passed. No Windows servicing commands were executed.");
 
 sealed class MediaHandler(Func<System.Net.Http.HttpRequestMessage, System.Net.Http.HttpResponseMessage> response) : System.Net.Http.HttpMessageHandler

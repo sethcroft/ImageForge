@@ -37,8 +37,9 @@ public partial class MainWindow : Window
         PlanList.ItemsSource = _steps;
         _steps.CollectionChanged += (_, _) => QueueBadge.Text = $"{_steps.Count} change{(_steps.Count == 1 ? "" : "s")} queued";
         MountPathBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ImageForge", "Mount");
-        Log("ImageForge 0.4 — image and deployed Windows workspace.");
+        Log("ImageForge 0.5 — image and deployed Windows workspace.");
         UpdateMountBadge();
+        LoadToolSettings();
     }
 
     private void Log(string text)
@@ -74,6 +75,7 @@ public partial class MainWindow : Window
         WorkspaceBody.IsEnabled = false;
         CommandRibbon.IsEnabled = false;
         TopMenu.IsEnabled = false;
+        ApplicationMenuButton.IsEnabled = false;
         BusyProgress.Visibility = Visibility.Visible;
         ReportActivity(ActivityTitle(title), null);
         try
@@ -100,6 +102,7 @@ public partial class MainWindow : Window
             WorkspaceBody.IsEnabled = true;
             CommandRibbon.IsEnabled = true;
             TopMenu.IsEnabled = true;
+            ApplicationMenuButton.IsEnabled = true;
             BusyProgress.Visibility = Visibility.Collapsed;
             CancelDownloadButton.Visibility = Visibility.Collapsed;
             foreach (var row in _images) row.ClearActivity();

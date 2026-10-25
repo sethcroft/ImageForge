@@ -8,7 +8,8 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>ImageForge</AssemblyName>
-    <Version>0.4.0</Version>
+    <Version>0.5.0-preview.1</Version>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../ImageForge.Core/ImageForge.Core.csproj" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="../LICENSE" LogicalName="ImageForge.LICENSE" /></ItemGroup>
 </Project>
