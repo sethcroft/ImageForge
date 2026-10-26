@@ -3,6 +3,8 @@ namespace ImageForge.App;
 public partial class App : Application
 {
     private Mutex? _instance;
+    private readonly FatalUiErrorState fatalUiError = new();
+    internal bool FatalShutdownRequested => fatalUiError.Requested;
     protected override void OnStartup(StartupEventArgs e)
     {
         var user = System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
@@ -15,9 +17,14 @@ public partial class App : Application
         }
         DispatcherUnhandledException += (_, args) =>
         {
-            MessageBox.Show(args.Exception.Message + "\n\nPreserve the mount journal in %LOCALAPPDATA%\\ImageForge if recovery is needed.", "ImageForge error");
             args.Handled = true;
-            Shutdown(1);
+            if (!fatalUiError.BeginShutdown()) return;
+            try { (MainWindow as ImageForge.App.MainWindow)?.RecordFatalError(args.Exception); } catch { }
+            try
+            {
+                MessageBox.Show("ImageForge encountered an interface error and needs to close.\n\nDetails are in %LOCALAPPDATA%\\ImageForge\\Diagnostics. Preserve the mount journal if recovery is needed. ImageForge will not automatically save or discard an image.", "ImageForge error");
+            }
+            finally { Shutdown(1); }
         };
         base.OnStartup(e);
     }

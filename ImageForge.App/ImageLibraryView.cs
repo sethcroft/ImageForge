@@ -25,9 +25,25 @@ public partial class MainWindow
         _rebuildingLibrary = true;
         try
         {
-            _libraryRoots = ImageLibrary.Build(_images.GroupBy(row => row.Path, StringComparer.OrdinalIgnoreCase)
+            var visibleRows = _images.Where(row =>
+                (SourceFormatFilter.SelectedIndex == 0 || row.Format == (SourceFormatFilter.SelectedItem as ComboBoxItem)?.Content as string) &&
+                (SourceStatusFilter.SelectedIndex == 0 || row.Status == (SourceStatusFilter.SelectedItem as ComboBoxItem)?.Content as string));
+            _libraryRoots = ImageLibrary.Build(visibleRows.GroupBy(row => row.Path, StringComparer.OrdinalIgnoreCase)
                 .Select(group => new LibrarySource<ImageRow>(group.Key, group.ToArray())), row => row.Index, row => row.Edition.Name,
-                ImageFilterBox.Text, (SourceKindFilter.SelectedItem as ComboBoxItem)?.Content as string ?? "All");
+                ImageFilterBox.Text, SourceKindFilter.SelectedIndex == 0 ? "All" : (SourceKindFilter.SelectedItem as ComboBoxItem)?.Content as string ?? "All");
+            foreach (var folder in ImageLibrary.Nodes(_libraryRoots).Where(node => node.Kind == LibraryNodeKind.Folder))
+                folder.Children.Sort((left, right) =>
+                {
+                    if (left.Kind != right.Kind) return left.Kind == LibraryNodeKind.Folder ? -1 : 1;
+                    if (left.Kind == LibraryNodeKind.Source && SourceSortBox.SelectedIndex > 0)
+                    {
+                        var comparison = SourceSortBox.SelectedIndex == 1
+                            ? System.IO.File.GetLastWriteTimeUtc(right.Path).CompareTo(System.IO.File.GetLastWriteTimeUtc(left.Path))
+                            : _images.First(row => row.Path == right.Path).SizeBytes.CompareTo(_images.First(row => row.Path == left.Path).SizeBytes);
+                        if (comparison != 0) return comparison;
+                    }
+                    return StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name);
+                });
             _selectedLibraryNode = null;
             foreach (var node in ImageLibrary.Nodes(_libraryRoots))
             {
@@ -47,6 +63,8 @@ public partial class MainWindow
         if (row is not null && !ImageLibrary.Nodes(_libraryRoots).Any(node => ReferenceEquals(node.Edition, row)))
         {
             SourceKindFilter.SelectedIndex = 0;
+            SourceFormatFilter.SelectedIndex = 0;
+            SourceStatusFilter.SelectedIndex = 0;
             ImageFilterBox.Clear();
             RebuildImageLibrary();
         }

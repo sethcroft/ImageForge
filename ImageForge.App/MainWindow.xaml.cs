@@ -37,10 +37,13 @@ public partial class MainWindow : Window
         PlanList.ItemsSource = _steps;
         _steps.CollectionChanged += (_, _) => QueueBadge.Text = $"{_steps.Count} change{(_steps.Count == 1 ? "" : "s")} queued";
         MountPathBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ImageForge", "Mount");
-        Log("ImageForge 0.6 — image and deployed Windows workspace.");
+        Log("ImageForge 0.7 — image and deployed Windows workspace.");
         UpdateMountBadge();
         LoadToolSettings();
+        LiveWindowsCaption.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows));
     }
+
+    internal void RecordFatalError(Exception exception) => _diagnostics.Write("FATAL: " + exception);
 
     private void Log(string text)
     {
@@ -107,6 +110,7 @@ public partial class MainWindow : Window
             CancelDownloadButton.Visibility = Visibility.Collapsed;
             foreach (var row in _images) row.ClearActivity();
             UpdateMountBadge();
+            if (SourceStatusFilter.SelectedIndex > 0) RebuildImageLibrary();
         }
     }
 
@@ -119,6 +123,7 @@ public partial class MainWindow : Window
         EditionBox.IsEnabled = _activeMount is null;
         SaveImageButton.IsEnabled = _activeMount is not null;
         DiscardImageButton.IsEnabled = _activeMount is not null;
+        RevertImageButton.IsEnabled = _activeMount is not null;
         SharedSaveButton.IsEnabled = _activeMount is not null;
         SharedDiscardButton.IsEnabled = _activeMount is not null;
         MountImageButton.IsEnabled = _activeMount is null && _installation is null && _selectedLibraryNode?.Edition is not null && EditionBox.SelectedItem is not null;
@@ -353,6 +358,7 @@ public partial class MainWindow : Window
     });
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if ((Application.Current as App)?.FatalShutdownRequested == true) return;
         if (_busy) { e.Cancel = true; MessageBox.Show(this, "An operation is running. Use Cancel download if available, or wait for it to finish before closing."); return; }
         if (_activeMount is not null || _steps.Count > 0)
         {

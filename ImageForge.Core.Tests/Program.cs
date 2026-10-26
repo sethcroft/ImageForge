@@ -250,6 +250,16 @@ Check(ImageLibrary.Category("install.ESD") == "Read-only" && ImageLibrary.Catego
 var siblingSources = new[] { new LibrarySource<ImageEdition>(Path.Combine(libraryRoot, "Images", "a.wim"), [homeEdition]), new LibrarySource<ImageEdition>(Path.Combine(libraryRoot, "Images-other", "b.wim"), [homeEdition]) };
 Check(ImageLibrary.Build(siblingSources, edition => edition.Index, edition => edition.Name)[1].Children.Single().Path == libraryRoot, "common-folder detection respects directory boundaries instead of matching path prefixes");
 
+var uiMarkup = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "MainWindow.xaml"));
+XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+var progressBindings = uiMarkup.Descendants(wpf + "ProgressBar").Select(element => (string?)element.Attribute("Value")).Where(value => value?.StartsWith("{Binding", StringComparison.Ordinal) == true).ToArray();
+Check(progressBindings.Length > 0 && progressBindings.All(binding => binding!.Contains("Mode=OneWay", StringComparison.Ordinal)), "all model-bound progress bars explicitly use OneWay to avoid WPF RangeBase's TwoWay default on read-only progress properties");
+var fatalState = new ImageForge.App.FatalUiErrorState();
+Check(!fatalState.Requested && fatalState.BeginShutdown() && fatalState.Requested && !fatalState.BeginShutdown(), "fatal UI errors enter shutdown once and suppress nested error dialogs");
+var concurrentFatalState = new ImageForge.App.FatalUiErrorState(); var fatalWinners = 0;
+Parallel.For(0, 32, _ => { if (concurrentFatalState.BeginShutdown()) Interlocked.Increment(ref fatalWinners); });
+Check(fatalWinners == 1, "simultaneous fatal UI errors admit only one shutdown reporter");
+
 Console.WriteLine($"{count} checks passed. No Windows servicing commands were executed.");
 
 sealed class MediaHandler(Func<System.Net.Http.HttpRequestMessage, System.Net.Http.HttpResponseMessage> response) : System.Net.Http.HttpMessageHandler

@@ -13,8 +13,9 @@ public sealed class LibraryNode<T>(string key, string name, string path, Library
     public LibraryNodeKind Kind { get; } = kind;
     public T? Edition { get; } = edition;
     public bool IsCategory => Kind == LibraryNodeKind.Category;
+    public bool IsFolder => Kind == LibraryNodeKind.Folder;
     public bool IsMessage => Kind == LibraryNodeKind.Message;
-    public string Glyph => Kind switch { LibraryNodeKind.Folder => "📁", LibraryNodeKind.Source => "◉", LibraryNodeKind.Edition => "▤", _ => "" };
+    public string Glyph => Kind switch { LibraryNodeKind.Folder => "\uE8B7", LibraryNodeKind.Source => "\uE958", LibraryNodeKind.Edition => "\uE8A5", _ => "" };
     public List<LibraryNode<T>> Children { get; } = [];
     private bool expanded = true, selected;
     public bool IsExpanded { get => expanded; set { if (expanded == value) return; expanded = value; Changed(nameof(IsExpanded)); } }
