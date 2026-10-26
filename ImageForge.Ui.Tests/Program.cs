@@ -19,7 +19,7 @@ internal static class Program
     private static int Main()
     {
         var output = Path.GetFullPath("artifacts/windows-ui"); Directory.CreateDirectory(output);
-        var app = new App(); app.InitializeComponent(); app.StartupUri = null; app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var app = new App(); app.InitializeComponent(); app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         // Drive the real WPF dispatcher without invoking App.OnStartup's fatal-error dialog.
         app.DispatcherUnhandledException += (_, e) => { errors.Add(e.Exception.ToString()); e.Handled = true; };
         PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
