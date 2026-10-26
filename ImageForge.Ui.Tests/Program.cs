@@ -88,7 +88,14 @@ internal static class Program
     private static void Capture(Window window,string path)
     {
         var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32); bitmap.Render(window);
-        var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var file=File.Create(path); encoder.Save(file);
+        var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using (var file=File.Create(path)) encoder.Save(file);
+        // Retain viewable renders through ordinary job logs when artifact storage is unavailable.
+        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
+        {
+            var data=Convert.ToBase64String(File.ReadAllBytes(path));
+            for (var offset=0;offset<data.Length;offset+=4096)
+                Console.WriteLine($"IMAGEFORGE_RENDER:{Path.GetFileName(path)}:{offset/4096}:{data.Substring(offset,Math.Min(4096,data.Length-offset))}");
+        }
     }
     private static async Task DismAsync(string[] arguments)
     {
