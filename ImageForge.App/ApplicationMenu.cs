@@ -60,7 +60,7 @@ public partial class MainWindow
         LibraryInfoBanner.Visibility = _toolSettings.ShowInfoBar ? Visibility.Visible : Visibility.Collapsed;
         ImageDescriptionColumn.Width = new GridLength(_toolSettings.ShowDescriptions ? 180 : 0);
         ImageList.Tag = ImageDescriptionColumn.Width;
-        ImageLibraryContent.MinWidth = _toolSettings.ShowDescriptions ? 820 : 640;
+        ImageLibraryContent.MinWidth = _toolSettings.ShowDescriptions ? 800 : 620;
         foreach (var row in _images) { row.CompactDates = _toolSettings.CompactDates; row.RefreshPresentation(); }
         foreach (var preset in _presets) { preset.CompactDates = _toolSettings.CompactDates; preset.RefreshPresentation(); }
     }

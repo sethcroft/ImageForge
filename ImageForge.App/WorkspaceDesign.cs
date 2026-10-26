@@ -31,7 +31,7 @@ public partial class MainWindow
         var library = page == 0;
         PresetPane.Visibility = library ? Visibility.Visible : Visibility.Collapsed;
         PresetColumn.MinWidth = library ? 300 : 0;
-        PresetColumn.Width = library ? new GridLength(370) : new GridLength(0);
+        PresetColumn.Width = library ? new GridLength(390) : new GridLength(0);
         ImageCommands.Visibility = library ? Visibility.Visible : Visibility.Collapsed;
         PageCommands.Visibility = library ? Visibility.Collapsed : Visibility.Visible;
         ContextAddButton.IsEnabled = page is 1 or 2 or 3 or 4 or 5 or 6 or 8 or 9;

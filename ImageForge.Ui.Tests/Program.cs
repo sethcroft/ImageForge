@@ -45,8 +45,7 @@ internal static class Program
             await DismAsync(["/English", "/Capture-Image", "/CaptureDir:" + capture, "/ImageFile:" + Path.Combine(media,"sources","install.wim"), "/Name:ImageForge UI fixture", "/Compress:fast", "/CheckIntegrity"]);
             File.Copy(Path.Combine(media,"sources","install.wim"), Path.Combine(media,"sources","boot.wim"));
             window = new MainWindow(); app.MainWindow = window; window.Show(); await Settle(window);
-            window.Width=1279; window.Height=799; await Settle(window);
-            window.Width=1280; window.Height=800; await Settle(window);
+            await SetViewport(window,1280,800);
             Check(errors.Count == 0, "startup has no dispatcher or binding errors");
             await (Task)Invoke(window, "ScanFolderAsync", media)!; await Settle(window);
             Check(errors.Count == 0, "adding extracted ISO directory completes without read-only binding exceptions");
@@ -62,14 +61,15 @@ internal static class Program
             Invoke(rows[0], "SetActivity", (double?)37.5); await Settle(window);
             Check(Visuals<ProgressBar>(tree).Any(bar => Math.Abs(bar.Value - 37.5) < .01), "progress reaches a real rendered control from a read-only model property");
             Check(errors.Count == 0, "progress updates create no dispatcher or binding errors");
-            Check(Math.Abs(window.ActualWidth-1280)<2 && Math.Abs(window.ActualHeight-800)<2, "reference render uses the requested 1280 by 800 window size");
+            var client=(FrameworkElement)window.Content;
+            Check(Math.Abs(client.ActualWidth-1280)<2 && Math.Abs(client.ActualHeight-800)<2, "reference render uses the requested 1280 by 800 WPF client viewport");
             var deployed = Visuals<Expander>(window).First(expander => expander.Header as string == "Deployed");
             Check(deployed.TransformToAncestor(window).Transform(new Point()).Y < 350, "deployed card is visible without blank space from hidden column headers");
             var searchControl=(FrameworkElement)window.FindName("ImageFilterBox");
             Check(searchControl.ActualHeight <= 32, "search placeholder cannot stretch the filter row");
             Capture(window, Path.Combine(output,"image-library-1280.png"));
-            var brand = (FrameworkElement)window.FindName("BrandMark"); var point = brand.TransformToAncestor(window).Transform(new Point(brand.ActualWidth/2, 0));
-            Check(Math.Abs(point.X-window.ActualWidth/2)<2, "branding is centered in the actual window");
+            var brand = (FrameworkElement)window.FindName("BrandMark"); var point = brand.TransformToAncestor(client).Transform(new Point(brand.ActualWidth/2, 0));
+            Check(Math.Abs(point.X-client.ActualWidth/2)<2, "branding is centered in the actual WPF client layout");
             var search = (TextBox)window.FindName("ImageFilterBox"); search.Text = "does-not-exist"; await Settle(window);
             Check(!Visuals<TextBlock>(tree).Any(text => text.Text == "1 · ImageForge UI fixture"), "search hides nonmatching edition rows");
             search.Clear(); await Settle(window);
@@ -89,7 +89,7 @@ internal static class Program
             var category=(ComboBox)window.FindName("SourceKindFilter"); category.SelectedIndex=1; await Settle(window);
             Check(!Visuals<TextBlock>(tree).Any(text => text.Text == "1 · ImageForge UI fixture"), "read-only category filter excludes editable WIM fixtures");
             category.SelectedIndex=0; await Settle(window);
-            window.Width=1120; await Settle(window); Capture(window,Path.Combine(output,"image-library-1120.png"));
+            await SetViewport(window,1120,800); Capture(window,Path.Combine(output,"image-library-1120.png"));
             Check(((FrameworkElement)window.FindName("PresetPane")).ActualWidth >= 300, "presets remain visible at minimum window width");
             Check(errors.Count == 0, "search, filters and resizing retain valid WPF bindings");
         }
@@ -104,9 +104,19 @@ internal static class Program
         if(root is T match) yield return match;
         for(var i=0;i<VisualTreeHelper.GetChildrenCount(root);i++) foreach(var child in Visuals<T>(VisualTreeHelper.GetChild(root,i))) yield return child;
     }
+    private static async Task SetViewport(Window window,double width,double height)
+    {
+        // Hosted Windows desktops can clamp native windows to a 1024px monitor. Keep
+        // real controls live in that window while measuring the actual client at the reference viewport.
+        window.Width=width; window.Height=height;
+        var client=(FrameworkElement)window.Content; client.Width=width; client.Height=height;
+        await Settle(window);
+    }
     private static void Capture(Window window,string path)
     {
-        var bitmap=new RenderTargetBitmap((int)window.ActualWidth,(int)window.ActualHeight,96,96,PixelFormats.Pbgra32); bitmap.Render(window);
+        var client=(FrameworkElement)window.Content;
+        client.Measure(new Size(client.Width,client.Height)); client.Arrange(new Rect(0,0,client.Width,client.Height)); client.UpdateLayout();
+        var bitmap=new RenderTargetBitmap((int)client.ActualWidth,(int)client.ActualHeight,96,96,PixelFormats.Pbgra32); bitmap.Render(client);
         var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using (var file=File.Create(path)) encoder.Save(file);
         // Retain viewable renders through ordinary job logs when artifact storage is unavailable.
         if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
