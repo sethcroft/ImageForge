@@ -18,5 +18,15 @@ public partial class MainWindow
         foreach (var entry in entries) { var item = new MenuItem { Header = entry.Label }; item.Click += entry.Handler; menu.Items.Add(item); }
         menu.IsOpen = true;
     }
+    private void SizeSort_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (SourceSortBox?.SelectedIndex > 0 && DateSortBox is not null) DateSortBox.SelectedIndex = 0;
+        RebuildImageLibrary();
+    }
+    private void DateSort_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (DateSortBox?.SelectedIndex > 0 && SourceSortBox is not null) SourceSortBox.SelectedIndex = 0;
+        RebuildImageLibrary();
+    }
     private void LibraryFilter_Changed(object sender, SelectionChangedEventArgs e) => RebuildImageLibrary();
 }

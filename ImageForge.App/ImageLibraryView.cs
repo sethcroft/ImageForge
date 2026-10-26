@@ -35,11 +35,11 @@ public partial class MainWindow
                 folder.Children.Sort((left, right) =>
                 {
                     if (left.Kind != right.Kind) return left.Kind == LibraryNodeKind.Folder ? -1 : 1;
-                    if (left.Kind == LibraryNodeKind.Source && SourceSortBox.SelectedIndex > 0)
+                    if (left.Kind == LibraryNodeKind.Source && (SourceSortBox.SelectedIndex > 0 || DateSortBox.SelectedIndex > 0))
                     {
-                        var comparison = SourceSortBox.SelectedIndex == 1
-                            ? System.IO.File.GetLastWriteTimeUtc(right.Path).CompareTo(System.IO.File.GetLastWriteTimeUtc(left.Path))
-                            : _images.First(row => row.Path == right.Path).SizeBytes.CompareTo(_images.First(row => row.Path == left.Path).SizeBytes);
+                        var comparison = DateSortBox.SelectedIndex > 0
+                            ? (DateSortBox.SelectedIndex == 1 ? 1 : -1) * System.IO.File.GetLastWriteTimeUtc(right.Path).CompareTo(System.IO.File.GetLastWriteTimeUtc(left.Path))
+                            : (SourceSortBox.SelectedIndex == 1 ? 1 : -1) * _images.First(row => row.Path == right.Path).SizeBytes.CompareTo(_images.First(row => row.Path == left.Path).SizeBytes);
                         if (comparison != 0) return comparison;
                     }
                     return StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name);
