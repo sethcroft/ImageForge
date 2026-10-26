@@ -64,13 +64,8 @@ public partial class MainWindow
 
     private void InitializeWorkspace()
     {
-        ImageList.ItemsSource = _images;
+        InitializeImageLibrary();
         PresetList.ItemsSource = _presets;
-        var view = CollectionViewSource.GetDefaultView(_images);
-        view.GroupDescriptions.Add(new PropertyGroupDescription("Category"));
-        view.GroupDescriptions.Add(new PropertyGroupDescription("Path"));
-        view.Filter = value => value is ImageRow row && (SourceKindFilter.SelectedIndex == 0 || row.Category == ((SourceKindFilter.SelectedItem as ComboBoxItem)?.Content as string)) && (string.IsNullOrWhiteSpace(ImageFilterBox.Text) ||
-            (row.Name + " " + row.Path + " " + row.Format).Contains(ImageFilterBox.Text, StringComparison.OrdinalIgnoreCase));
         OscdimgPathBox.Text = ImageTools.FindOscdimg() ?? "";
         if (File.Exists(PreferencesPath))
         {
@@ -125,21 +120,7 @@ public partial class MainWindow
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not open browser"); }
     }
-    private void ImageFilter_Changed(object sender, TextChangedEventArgs e)
-    {
-        if (ImageList?.ItemsSource is not null) CollectionViewSource.GetDefaultView(_images).Refresh();
-    }
-    private void ImageSelection_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (_activeMount is not null || ImageList.SelectedItem is not ImageRow row) return;
-        if (!SwitchToImageProject()) { ImageList.SelectedItem = null; return; }
-        ImagePathBox.Text = row.Path;
-        _editionsSource = row.Path;
-        var editions = _images.Where(r => r.Path.Equals(row.Path, StringComparison.OrdinalIgnoreCase)).Select(r => r.Edition).ToArray();
-        EditionBox.ItemsSource = editions;
-        EditionBox.SelectedItem = row.Edition;
-        UpdateMountBadge();
-    }
+    private void ImageFilter_Changed(object sender, TextChangedEventArgs e) => RebuildImageLibrary();
 
     private async Task AddSourceAsync(string path)
     {
@@ -149,7 +130,7 @@ public partial class MainWindow
         var editions = await _dism.GetEditionsAsync(path);
         if (editions.Count == 0) throw new InvalidDataException("DISM returned no readable editions for " + path);
         AddSourceRows(path, editions);
-        ImageList.SelectedItem = _images.First(r => r.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+        SelectLibraryEdition(_images.First(r => r.Path.Equals(path, StringComparison.OrdinalIgnoreCase)));
         ImagePathBox.Text = path;
         EditionBox.ItemsSource = editions;
         EditionBox.SelectedIndex = 0;
@@ -164,7 +145,7 @@ public partial class MainWindow
         foreach (var edition in editions) _images.Add(new(path, edition, size) { CompactDates = _toolSettings.CompactDates });
         SideImageCount.Text = _images.Count.ToString();
         ImageCountBadge.Text = $"{_images.Count} edition{(_images.Count == 1 ? "" : "s")}";
-        ImageEmptyState.Visibility = _images.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RebuildImageLibrary();
     }
 
     private async void AddImage_Click(object sender, RoutedEventArgs e)
@@ -207,7 +188,7 @@ public partial class MainWindow
         _editionsSource = null;
         SideImageCount.Text = _images.Count.ToString();
         ImageCountBadge.Text = $"{_images.Count} editions";
-        ImageEmptyState.Visibility = _images.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RebuildImageLibrary();
         Log("Removed source from the library. No files were deleted.");
         return Task.CompletedTask;
     });

@@ -76,7 +76,7 @@ public partial class MainWindow
 
     private void SourceKind_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (ImageList?.ItemsSource is not null) CollectionViewSource.GetDefaultView(_images).Refresh();
+        RebuildImageLibrary();
     }
     private void PresetFilter_Changed(object sender, TextChangedEventArgs e)
     {
@@ -130,13 +130,13 @@ public partial class MainWindow
         }
         if (_steps.Count > 0 && MessageBox.Show(this, "Clear the pending queue and start a new session? Save a preset first to keep these changes.", "New session", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         _steps.Clear(); _installation = null; _editionsSource = null;
-        ImageList.SelectedItem = null; ImagePathBox.Clear(); EditionBox.ItemsSource = null;
+        SelectLibraryEdition(null); ImagePathBox.Clear(); EditionBox.ItemsSource = null;
         FeatureList.ItemsSource = null; TargetEditionBox.ItemsSource = null;
         Navigate(0); UpdateMountBadge(); StatusText.Text = "Ready · New session" + (_restartRequired ? " · Restart required" : "");
     }
     private void Image_DoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (e.OriginalSource is DependencyObject source && ItemsControl.ContainerFromElement(ImageList, source) is ListViewItem && !_busy && _activeMount is null)
+        if (e.OriginalSource is DependencyObject source && ClosestTreeItem(source)?.DataContext is LibraryNode<ImageRow> { Kind: LibraryNodeKind.Edition } && !_busy && _activeMount is null)
             Mount_Click(sender, e);
     }
     private void Preset_DoubleClick(object sender, MouseButtonEventArgs e)

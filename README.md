@@ -1,8 +1,14 @@
 # ImageForge
 
-A Windows desktop application for preparing offline Windows installation images, inspired by NTLite's image-servicing workflows. Built with C#/.NET 8 and WPF, using Microsoft's DISM executable. Preview version 0.5; this is an independent implementation with a smaller feature set.
+A Windows desktop application for preparing offline Windows installation images, inspired by NTLite's image-servicing workflows. Built with C#/.NET 8 and WPF, using Microsoft's DISM executable. Preview version 0.6; this is an independent implementation with a smaller feature set.
 
-## Preview 0.5: application menu and tool settings
+## Preview 0.6: image-library tree
+
+The center library now uses a real WPF tree with separate **Deployed / Read-only / Other** cards. Folders expand to actual source files and their genuine editions; no empty-state panels overlay the table. Only an edition can be loaded. Search retains parent folders, expands matches and restores expansion state when cleared. Status and progress stay bound to the actual edition. Soft blue selection, panels and command accents follow the supplied ImageForge mockup. The existing WPF framework and servicing workflows are retained.
+
+[Tree changes and Windows review checklist](docs/PREVIEW-0.6.md).
+
+## Application menu and tool settings from preview 0.5
 
 The hamburger menu before **Image** now opens **New instance / Settings / Check for updates / Manage license / Export HW list / Send logs / About / Exit**, matching the requested menu order.
 
@@ -41,7 +47,7 @@ Presets continue to describe image-file projects. Registry tweaks, proprietary c
 
 ## Run on Windows
 
-[Download Windows x64 preview 0.5](https://github.com/sethcroft/ImageForge/raw/refs/tags/v0.5.0-preview.1/downloads/v0.5.0-preview.1/ImageForge-win-x64.zip) · [Release notes](https://github.com/sethcroft/ImageForge/releases/tag/v0.5.0-preview.1)
+[Download Windows x64 preview 0.6](https://github.com/sethcroft/ImageForge/raw/refs/tags/v0.6.0-preview.1/downloads/v0.6.0-preview.1/ImageForge-win-x64.zip) · [Release notes](https://github.com/sethcroft/ImageForge/releases/tag/v0.6.0-preview.1)
 
 Extract the Windows x64 package and open `ImageForge.exe`. Accept the Windows administrator prompt. The self-contained package includes the .NET runtime; keep all packaged files together. It uses the host DISM by default; an installed ADK DISM can be selected in Image tools. Use a Windows host that supports servicing the target image version. The preview executable is unsigned.
 

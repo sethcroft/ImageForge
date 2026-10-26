@@ -28,7 +28,7 @@ public partial class MainWindow
     {
         RequireUnmounted();
         if (_steps.Count > 0 && MessageBox.Show(this, "Changing the target installation clears the pending queue. Continue?", "Change target", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return false;
-        _steps.Clear(); ImageList.SelectedItem = null; ImagePathBox.Clear(); EditionBox.ItemsSource = null; _editionsSource = null;
+        _steps.Clear(); SelectLibraryEdition(null); ImagePathBox.Clear(); EditionBox.ItemsSource = null; _editionsSource = null;
         TargetEditionBox.ItemsSource = null; return true;
     }
     private async void SelectLive_Click(object sender, RoutedEventArgs e) => await Run("Loading running Windows", async () =>

@@ -223,6 +223,33 @@ try
 }
 finally { Directory.Delete(supportRoot, true); }
 
+var libraryRoot = Path.Combine(Path.GetTempPath(), "ImageForge-library-fixture");
+var proEdition = new ImageEdition(6, "Windows 11 Pro", "Pro fixture");
+var homeEdition = new ImageEdition(1, "Windows 11 Home", "Home fixture");
+LibrarySource<ImageEdition>[] librarySources =
+[
+    new(Path.Combine(libraryRoot, "Documents", "02", "sources", "install.wim"), [proEdition, homeEdition]),
+    new(Path.Combine(libraryRoot, "Documents", "Original", "install.wim"), [homeEdition]),
+    new(Path.Combine(libraryRoot, "Downloads", "install.esd"), [proEdition])
+];
+var tree = ImageLibrary.Build(librarySources, edition => edition.Index, edition => edition.Name);
+var nodes = ImageLibrary.Nodes(tree).ToArray();
+Check(tree.Select(node => node.Name).SequenceEqual(new[] { "Read-only", "Other" }), "library categories remain separate and ordered");
+Check(tree[1].Children.Count == 1 && tree[1].Children[0].Path == Path.Combine(libraryRoot, "Documents"), "library begins at the actual common source folder without a long redundant drive hierarchy");
+Check(nodes.Count(node => node.Kind == LibraryNodeKind.Source && node.Name == "install.wim") == 2, "identically named images in different directories remain distinct source nodes");
+Check(nodes.Single(node => node.Path == librarySources[0].Path && node.Kind == LibraryNodeKind.Source).Children.Select(node => node.Edition!.Index).SequenceEqual(new[] { 1, 6 }), "source files expand into genuine numerically ordered editions");
+Check(nodes.Single(node => node.Path == librarySources[0].Path && node.Edition?.Index == 6).Edition == proEdition, "tree edition nodes retain the original metadata object used for progress and mount status");
+Check(nodes.Select(node => node.Key).Distinct(StringComparer.OrdinalIgnoreCase).Count() == nodes.Length, "folder, source and edition identities do not collide");
+var filteredTree = ImageLibrary.Build(librarySources, edition => edition.Index, edition => edition.Name, "Windows 11 Pro", "Other");
+Check(filteredTree.Count == 1 && ImageLibrary.Nodes(filteredTree).Where(node => node.Kind == LibraryNodeKind.Edition).Select(node => node.Edition!.Index).SequenceEqual(new[] { 6 }), "library filtering retains ancestor folders and only matching editions in the requested category");
+var emptyTree = ImageLibrary.Build(Array.Empty<LibrarySource<ImageEdition>>(), edition => edition.Index, edition => edition.Name);
+Check(emptyTree.Count == 2 && emptyTree.All(node => node.Children.Count == 1 && node.Children[0].IsMessage), "empty categories have real nonoverlapping message nodes rather than overlay panels");
+var noMatches = ImageLibrary.Build(librarySources, edition => edition.Index, edition => edition.Name, "not-an-image");
+Check(noMatches.All(node => node.Children.Single().Name == "No matching images."), "unmatched searches do not present fabricated or stale editions");
+Check(ImageLibrary.Category("install.ESD") == "Read-only" && ImageLibrary.Category("install.swm") == "Read-only" && ImageLibrary.Category("disk.vhdx") == "Other", "source categories recognize packed/split formats without case sensitivity");
+var siblingSources = new[] { new LibrarySource<ImageEdition>(Path.Combine(libraryRoot, "Images", "a.wim"), [homeEdition]), new LibrarySource<ImageEdition>(Path.Combine(libraryRoot, "Images-other", "b.wim"), [homeEdition]) };
+Check(ImageLibrary.Build(siblingSources, edition => edition.Index, edition => edition.Name)[1].Children.Single().Path == libraryRoot, "common-folder detection respects directory boundaries instead of matching path prefixes");
+
 Console.WriteLine($"{count} checks passed. No Windows servicing commands were executed.");
 
 sealed class MediaHandler(Func<System.Net.Http.HttpRequestMessage, System.Net.Http.HttpResponseMessage> response) : System.Net.Http.HttpMessageHandler

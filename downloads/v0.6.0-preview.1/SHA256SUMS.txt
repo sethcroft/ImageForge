@@ -1,0 +1,2 @@
+9b5f0d28eb83c5bfeaf6a716f6adfaa0adbe490cfe3a3bcc2902f0e7d31a0d35  ImageForge-win-x64.zip
+b92956956233fb7fa23b6d36c7c5d044ee7b4d8a876b745f15773eaf29280686  ImageForge-source.zip

@@ -14,7 +14,7 @@ namespace ImageForge.App;
 public partial class MainWindow
 {
     private ToolSettings _toolSettings = new();
-    internal static string ProgramVersion => typeof(MainWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.5.0-preview.1";
+    internal static string ProgramVersion => typeof(MainWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.6.0-preview.1";
     private void ApplicationMenu_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu { PlacementTarget = ApplicationMenuButton, Placement = PlacementMode.Bottom, MinWidth = 196, Background = new SolidColorBrush(Color.FromRgb(248,248,248)), Padding = new(5) };
@@ -58,7 +58,9 @@ public partial class MainWindow
     {
         FontSize = _toolSettings.LargerFonts ? 14 : 12;
         PageHint.Visibility = _toolSettings.ShowInfoBar ? Visibility.Visible : Visibility.Collapsed;
-        ImageDescriptionColumn.Width = _toolSettings.ShowDescriptions ? 240 : 0;
+        ImageDescriptionColumn.Width = new GridLength(_toolSettings.ShowDescriptions ? 180 : 0);
+        ImageList.Tag = ImageDescriptionColumn.Width;
+        ImageLibraryContent.MinWidth = _toolSettings.ShowDescriptions ? 820 : 640;
         foreach (var row in _images) { row.CompactDates = _toolSettings.CompactDates; row.RefreshPresentation(); }
         foreach (var preset in _presets) { preset.CompactDates = _toolSettings.CompactDates; preset.RefreshPresentation(); }
     }

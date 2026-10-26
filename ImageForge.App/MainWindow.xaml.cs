@@ -37,7 +37,7 @@ public partial class MainWindow : Window
         PlanList.ItemsSource = _steps;
         _steps.CollectionChanged += (_, _) => QueueBadge.Text = $"{_steps.Count} change{(_steps.Count == 1 ? "" : "s")} queued";
         MountPathBox.Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ImageForge", "Mount");
-        Log("ImageForge 0.5 — image and deployed Windows workspace.");
+        Log("ImageForge 0.6 — image and deployed Windows workspace.");
         UpdateMountBadge();
         LoadToolSettings();
     }
@@ -121,7 +121,7 @@ public partial class MainWindow : Window
         DiscardImageButton.IsEnabled = _activeMount is not null;
         SharedSaveButton.IsEnabled = _activeMount is not null;
         SharedDiscardButton.IsEnabled = _activeMount is not null;
-        MountImageButton.IsEnabled = _activeMount is null && _installation is null && EditionBox.SelectedItem is not null;
+        MountImageButton.IsEnabled = _activeMount is null && _installation is null && _selectedLibraryNode?.Edition is not null && EditionBox.SelectedItem is not null;
         foreach (var row in _images) row.Mounted = _activeMount is not null && row.Index == _activeIndex && row.Path.Equals(_activeImage, StringComparison.OrdinalIgnoreCase);
         UpdateEditingNavigation();
     }
@@ -279,6 +279,7 @@ public partial class MainWindow : Window
         _activeImage = null;
         _activeIndex = 0;
         FeatureList.ItemsSource = null;
+        SyncLibrarySelection();
     });
 
     private void RemoveSteps_Click(object sender, RoutedEventArgs e)
@@ -339,6 +340,7 @@ public partial class MainWindow : Window
         foreach (var step in preset.Steps) _steps.Add(step);
         RememberPreset(path);
         AddSourceRows(preset.ImagePath, editions);
+        SelectLibraryEdition(_images.First(row => row.Path.Equals(Path.GetFullPath(preset.ImagePath), StringComparison.OrdinalIgnoreCase) && row.Index == edition.Index));
         Navigate(6);
         Log("Loaded preset. Review the queue before mounting and applying.");
     }
