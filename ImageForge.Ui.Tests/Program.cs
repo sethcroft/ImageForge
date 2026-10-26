@@ -115,8 +115,10 @@ internal static class Program
     private static void Capture(Window window,string path)
     {
         var client=(FrameworkElement)window.Content;
-        client.Measure(new Size(client.Width,client.Height)); client.Arrange(new Rect(0,0,client.Width,client.Height)); client.UpdateLayout();
+        client.Measure(new Size(client.Width,client.Height)); client.InvalidateArrange(); client.Arrange(new Rect(0,0,client.Width,client.Height));
         var bitmap=new RenderTargetBitmap((int)client.ActualWidth,(int)client.ActualHeight,96,96,PixelFormats.Pbgra32); bitmap.Render(client);
+        var pixel=new byte[4]; bitmap.CopyPixels(new Int32Rect((int)client.ActualWidth-2,(int)client.ActualHeight/2,1,1),pixel,4,0);
+        Check(pixel[3]==255, "render covers the full requested viewport without native-monitor clipping");
         var encoder=new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using (var file=File.Create(path)) encoder.Save(file);
         // Retain viewable renders through ordinary job logs when artifact storage is unavailable.
         if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
